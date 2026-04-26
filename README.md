@@ -38,13 +38,26 @@ build/UplinC.app
 
 ## Homebrew
 
-Create the release archive:
+Build the app and produce a release zip:
 
 ```sh
-CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" NOTARYTOOL_PROFILE=uplinc make package
+make build
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+mkdir -p dist
+find build/UplinC.app -exec touch -t 202601010000 {} +
+COPYFILE_DISABLE=1 ditto -c -k --norsrc --noextattr --keepParent build/UplinC.app "dist/UplinC-${VERSION}.zip"
+shasum -a 256 "dist/UplinC-${VERSION}.zip"
 ```
 
-Upload the generated `dist/UplinC-0.1.3.zip` file to the matching GitHub Release tag, then update the `uplinc` cask in `ichi0g0y/homebrew-tap`.
+The bundle is ad-hoc signed. The cask's `postflight` clears the `com.apple.quarantine` xattr so Gatekeeper does not block launch.
+
+Upload the generated `dist/UplinC-<version>.zip` to the matching GitHub Release tag, then bump `version` and `sha256` in the `uplinc` cask in `ichi0g0y/homebrew-tap`.
+
+If a Developer ID Application certificate and a notarytool keychain profile are available, `make package` produces a fully signed and notarized archive instead:
+
+```sh
+CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARYTOOL_PROFILE=uplinc make package
+```
 
 Install with Homebrew:
 
