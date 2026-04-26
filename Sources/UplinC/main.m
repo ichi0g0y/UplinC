@@ -30,6 +30,7 @@ static const int UplinCHeartbeatPort = 54176;
 @property NSMenuItem *logWatchMenuItem;
 @property NSMenuItem *tcpWatchMenuItem;
 @property NSTimer *healthTimer;
+@property NSTimer *heartbeatTimer;
 @property NSTask *logTask;
 @property BOOL autoHealEnabled;
 @property BOOL parentModeEnabled;
@@ -86,6 +87,7 @@ static const int UplinCHeartbeatPort = 54176;
     [self startBonjour];
     [self appendMedicLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ modePreference=%@ effectiveRole=%@ autoHeal=on logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.modePreference, [self effectiveRoleLabel]]];
     [self startHealthTimer];
+    [self startHeartbeatTimer];
     [self startLogWatcher];
     [self checkHealth];
 }
@@ -188,6 +190,17 @@ static const int UplinCHeartbeatPort = 54176;
 
 - (void)startHealthTimer {
     self.healthTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(checkHealth) userInfo:nil repeats:YES];
+}
+
+- (void)startHeartbeatTimer {
+    self.heartbeatTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(heartbeatTick) userInfo:nil repeats:YES];
+}
+
+- (void)heartbeatTick {
+    [self drainHeartbeatSocket];
+    [self updateEffectiveParentRole];
+    [self sendHeartbeatViaBonjour];
+    [self rebuildMachinesSubmenu];
 }
 
 - (void)checkHealth {
@@ -342,6 +355,7 @@ static const int UplinCHeartbeatPort = 54176;
     [[NSUserDefaults standardUserDefaults] setObject:self.modePreference forKey:@"ModePreference"];
     [self updateEffectiveParentRole];
     [self updateToggleStates];
+    [self sendHeartbeatViaBonjour];
     [self appendMedicLog:[NSString stringWithFormat:@"setting modePreference=%@ effectiveRole=%@", self.modePreference, [self effectiveRoleLabel]]];
 }
 
@@ -489,9 +503,6 @@ static const int UplinCHeartbeatPort = 54176;
 
 - (void)checkHeartbeatHealth {
     NSArray<NSString *> *peerAddresses = [self universalControlPeerAddresses];
-    [self drainHeartbeatSocket];
-    [self updateEffectiveParentRole];
-    [self sendHeartbeatViaBonjour];
 
     if ((NSInteger)peerAddresses.count != self.lastLoggedHeartbeatPeerCount) {
         [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_peers count=%ld addresses=%@", (long)peerAddresses.count, [peerAddresses componentsJoinedByString:@","]]];
@@ -839,7 +850,7 @@ static const int UplinCHeartbeatPort = 54176;
         if (![lastSeen isKindOfClass:[NSDate class]]) {
             continue;
         }
-        if ([now timeIntervalSinceDate:lastSeen] <= 30.0) {
+        if ([now timeIntervalSinceDate:lastSeen] <= 10.0) {
             [peers addObject:[peer copy]];
         }
     }
