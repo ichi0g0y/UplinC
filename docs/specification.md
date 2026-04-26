@@ -189,7 +189,7 @@ Strong reset signals:
 
 - `UniversalControl` process is missing.
 - `UniversalControl` TCP links were seen and then disappear for 60 seconds.
-- UplinC heartbeat disappears while Universal Control TCP links are also missing.
+- UplinC heartbeat from a Universal Control TCP peer disappears for 30 seconds while that peer's TCP link is also missing. Per-peer evaluation: a heartbeat-stale peer whose TCP connection has dropped triggers a reset even if other peers remain healthy.
 
 Weak reset signal:
 
@@ -280,7 +280,7 @@ CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" NOTARYTOOL_PROFIL
 Generated archive:
 
 ```text
-dist/UplinC-0.1.2.zip
+dist/UplinC-0.1.3.zip
 ```
 
 The `dist/` directory is ignored by git. The package command signs with the configured Developer ID identity, submits the app for notarization, staples the ticket, and verifies Gatekeeper assessment before creating the final archive. Upload the archive to the matching GitHub Release tag before updating the cask in `ichi0g0y/homebrew-tap`.

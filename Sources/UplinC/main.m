@@ -3,13 +3,14 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 static const int UplinCHeartbeatPort = 54176;
 
-@interface MedicApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate>
+@interface MedicApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate, NSNetServiceDelegate, NSNetServiceBrowserDelegate>
 @property NSStatusItem *statusItem;
 @property NSMenuItem *statusMenuItem;
 @property NSMenuItem *lastCheckMenuItem;
@@ -21,6 +22,9 @@ static const int UplinCHeartbeatPort = 54176;
 @property NSMenuItem *logFileMenuItem;
 @property NSMenuItem *autoHealMenuItem;
 @property NSMenuItem *parentModeMenuItem;
+@property NSMenuItem *modeAutoMenuItem;
+@property NSMenuItem *modeParentMenuItem;
+@property NSMenuItem *modeChildMenuItem;
 @property NSMenuItem *logWatchMenuItem;
 @property NSMenuItem *tcpWatchMenuItem;
 @property NSTimer *healthTimer;
@@ -42,6 +46,11 @@ static const int UplinCHeartbeatPort = 54176;
 @property NSInteger lastLoggedHeartbeatPeerCount;
 @property NSString *lastLoggedPeerSummary;
 @property NSInteger missedHeartbeatChecks;
+@property NSMutableSet<NSString *> *ucPeersEverSeen;
+@property NSNetService *bonjourService;
+@property NSNetServiceBrowser *bonjourBrowser;
+@property NSMutableDictionary<NSString *, NSNetService *> *bonjourPeers;
+@property NSMutableDictionary<NSString *, NSArray<NSData *> *> *bonjourPeerAddresses;
 @property int heartbeatSocket;
 @property NSDate *lastResetAttempt;
 @property NSDate *lastFailureLogAt;
@@ -59,6 +68,9 @@ static const int UplinCHeartbeatPort = 54176;
     self.logWatchEnabled = YES;
     self.tcpWatchEnabled = YES;
     self.heartbeatPeers = [[NSMutableDictionary alloc] init];
+    self.ucPeersEverSeen = [[NSMutableSet alloc] init];
+    self.bonjourPeers = [[NSMutableDictionary alloc] init];
+    self.bonjourPeerAddresses = [[NSMutableDictionary alloc] init];
     self.heartbeatSocket = -1;
     self.lastResetAttempt = [NSDate distantPast];
     self.lastFailureLogAt = [NSDate distantPast];
@@ -69,6 +81,7 @@ static const int UplinCHeartbeatPort = 54176;
     [self configureMenu];
     [self configureNotifications];
     [self startHeartbeatSocket];
+    [self startBonjour];
     [self appendMedicLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ modePreference=%@ effectiveRole=%@ autoHeal=on logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.modePreference, [self effectiveRoleLabel]]];
     [self startHealthTimer];
     [self startLogWatcher];
@@ -79,6 +92,7 @@ static const int UplinCHeartbeatPort = 54176;
     (void)notification;
     [self appendMedicLog:@"app_stop"];
     [self stopLogWatcher];
+    [self stopBonjour];
     [self stopHeartbeatSocket];
 }
 
@@ -110,8 +124,21 @@ static const int UplinCHeartbeatPort = 54176;
 
     self.autoHealMenuItem = [[NSMenuItem alloc] initWithTitle:@"Auto Heal" action:@selector(toggleAutoHeal:) keyEquivalent:@""];
     self.autoHealMenuItem.target = self;
-    self.parentModeMenuItem = [[NSMenuItem alloc] initWithTitle:@"Mode: Auto" action:@selector(toggleParentMode:) keyEquivalent:@""];
-    self.parentModeMenuItem.target = self;
+    self.parentModeMenuItem = [[NSMenuItem alloc] initWithTitle:@"Mode: Auto" action:nil keyEquivalent:@""];
+    NSMenu *modeSubmenu = [[NSMenu alloc] initWithTitle:@"Mode"];
+    self.modeAutoMenuItem = [[NSMenuItem alloc] initWithTitle:@"Auto" action:@selector(selectMode:) keyEquivalent:@""];
+    self.modeAutoMenuItem.target = self;
+    self.modeAutoMenuItem.representedObject = @"auto";
+    self.modeParentMenuItem = [[NSMenuItem alloc] initWithTitle:@"Parent" action:@selector(selectMode:) keyEquivalent:@""];
+    self.modeParentMenuItem.target = self;
+    self.modeParentMenuItem.representedObject = @"parent";
+    self.modeChildMenuItem = [[NSMenuItem alloc] initWithTitle:@"Child" action:@selector(selectMode:) keyEquivalent:@""];
+    self.modeChildMenuItem.target = self;
+    self.modeChildMenuItem.representedObject = @"child";
+    [modeSubmenu addItem:self.modeAutoMenuItem];
+    [modeSubmenu addItem:self.modeParentMenuItem];
+    [modeSubmenu addItem:self.modeChildMenuItem];
+    self.parentModeMenuItem.submenu = modeSubmenu;
     self.logWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch UC Logs" action:@selector(toggleLogWatch:) keyEquivalent:@""];
     self.logWatchMenuItem.target = self;
     self.tcpWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch TCP Link" action:@selector(toggleTCPWatch:) keyEquivalent:@""];
@@ -287,15 +314,21 @@ static const int UplinCHeartbeatPort = 54176;
     [self appendMedicLog:[NSString stringWithFormat:@"setting autoHeal=%@", self.autoHealEnabled ? @"on" : @"off"]];
 }
 
-- (void)toggleParentMode:(id)sender {
-    (void)sender;
-    if ([self.modePreference isEqualToString:@"auto"]) {
-        self.modePreference = @"parent";
-    } else if ([self.modePreference isEqualToString:@"parent"]) {
-        self.modePreference = @"child";
-    } else {
-        self.modePreference = @"auto";
+- (void)selectMode:(id)sender {
+    NSString *requested = nil;
+    if ([sender isKindOfClass:[NSMenuItem class]]) {
+        id represented = [(NSMenuItem *)sender representedObject];
+        if ([represented isKindOfClass:[NSString class]]) {
+            requested = represented;
+        }
     }
+    if (![@[@"auto", @"parent", @"child"] containsObject:requested]) {
+        return;
+    }
+    if ([requested isEqualToString:self.modePreference]) {
+        return;
+    }
+    self.modePreference = requested;
     [[NSUserDefaults standardUserDefaults] setObject:self.modePreference forKey:@"ModePreference"];
     [self updateEffectiveParentRole];
     [self updateToggleStates];
@@ -333,7 +366,9 @@ static const int UplinCHeartbeatPort = 54176;
 - (void)updateToggleStates {
     self.autoHealMenuItem.state = self.autoHealEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.parentModeMenuItem.title = [NSString stringWithFormat:@"Mode: %@ (%@)", [self modePreferenceLabel], [self effectiveRoleLabel]];
-    self.parentModeMenuItem.state = self.parentModeEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    self.modeAutoMenuItem.state = [self.modePreference isEqualToString:@"auto"] ? NSControlStateValueOn : NSControlStateValueOff;
+    self.modeParentMenuItem.state = [self.modePreference isEqualToString:@"parent"] ? NSControlStateValueOn : NSControlStateValueOff;
+    self.modeChildMenuItem.state = [self.modePreference isEqualToString:@"child"] ? NSControlStateValueOn : NSControlStateValueOff;
     self.logWatchMenuItem.state = self.logWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.tcpWatchMenuItem.state = self.tcpWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
 }
@@ -446,30 +481,66 @@ static const int UplinCHeartbeatPort = 54176;
     NSArray<NSString *> *peerAddresses = [self universalControlPeerAddresses];
     [self drainHeartbeatSocket];
     [self updateEffectiveParentRole];
-    [self sendHeartbeatToPeerAddresses:peerAddresses];
+    [self sendHeartbeatViaBonjour];
 
     if ((NSInteger)peerAddresses.count != self.lastLoggedHeartbeatPeerCount) {
         [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_peers count=%ld addresses=%@", (long)peerAddresses.count, [peerAddresses componentsJoinedByString:@","]]];
         self.lastLoggedHeartbeatPeerCount = peerAddresses.count;
     }
 
-    NSTimeInterval age = [[NSDate date] timeIntervalSinceDate:self.lastHeartbeatReceivedAt];
-    if (self.heartbeatPeerHasBeenSeen && age > 15.0) {
+    [self.ucPeersEverSeen addObjectsFromArray:peerAddresses];
+
+    NSDate *now = [NSDate date];
+    NSArray<NSDictionary<NSString *, id> *> *recent = [self recentHeartbeatPeers];
+
+    NSString *freshestHost = nil;
+    NSTimeInterval freshestAge = -1.0;
+    NSInteger freshCount = 0;
+    for (NSDictionary<NSString *, id> *peer in recent) {
+        NSDate *lastSeen = peer[@"lastSeen"];
+        if (![lastSeen isKindOfClass:[NSDate class]]) {
+            continue;
+        }
+        NSTimeInterval age = [now timeIntervalSinceDate:lastSeen];
+        if (age > 15.0) {
+            continue;
+        }
+        freshCount += 1;
+        if (freshestAge < 0.0 || age < freshestAge) {
+            freshestAge = age;
+            freshestHost = peer[@"host"] ?: @"peer";
+        }
+    }
+
+    NSTimeInterval globalAge = [[NSDate date] timeIntervalSinceDate:self.lastHeartbeatReceivedAt];
+    if (self.heartbeatPeerHasBeenSeen && globalAge > 15.0) {
         self.missedHeartbeatChecks += 1;
     } else if (self.heartbeatPeerHasBeenSeen) {
         self.missedHeartbeatChecks = 0;
     }
 
-    if (!self.heartbeatPeerHasBeenSeen) {
-        self.heartbeatStatusMenuItem.title = [NSString stringWithFormat:@"Heartbeat: waiting, peers %ld", (long)peerAddresses.count];
+    if (freshestHost != nil) {
+        NSString *header;
+        if (freshCount >= 2) {
+            header = [NSString stringWithFormat:@"Heartbeat: %@+%ld %.0fs ago, miss %ld", freshestHost, (long)(freshCount - 1), freshestAge, (long)self.missedHeartbeatChecks];
+        } else {
+            header = [NSString stringWithFormat:@"Heartbeat: %@ %.0fs ago, miss %ld", freshestHost, freshestAge, (long)self.missedHeartbeatChecks];
+        }
+        if (header.length > 160) {
+            header = [[header substringToIndex:157] stringByAppendingString:@"..."];
+        }
+        self.heartbeatStatusMenuItem.title = header;
+    } else if (self.heartbeatPeerHasBeenSeen) {
+        self.heartbeatStatusMenuItem.title = [NSString stringWithFormat:@"Heartbeat: stale, miss %ld", (long)self.missedHeartbeatChecks];
     } else {
-        self.heartbeatStatusMenuItem.title = [NSString stringWithFormat:@"Heartbeat: %.0fs ago, miss %ld", age, (long)self.missedHeartbeatChecks];
+        self.heartbeatStatusMenuItem.title = [NSString stringWithFormat:@"Heartbeat: waiting, peers %ld bonjour %lu", (long)peerAddresses.count, (unsigned long)self.bonjourPeerAddresses.count];
     }
+
     [self updatePeerStatusWithUCPeerAddresses:peerAddresses];
 
-    if ([self canAutoReset] && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= 6 && self.tcpLinkHasBeenSeen && self.missedTCPChecks > 0) {
+    if ([self canAutoReset] && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= 6 && self.ucPeersEverSeen.count > 0 && peerAddresses.count == 0) {
         self.missedHeartbeatChecks = 0;
-        [self appendMedicLog:@"trigger heartbeat_missing misses=6 tcpAlsoMissing=yes"];
+        [self appendMedicLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=6 tcpAlsoMissing=yes ucPeersEverSeen=%lu", (unsigned long)self.ucPeersEverSeen.count]];
         [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES];
     }
 }
@@ -518,6 +589,8 @@ static const int UplinCHeartbeatPort = 54176;
 
     int yes = 1;
     setsockopt(self.heartbeatSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    int no = 0;
+    setsockopt(self.heartbeatSocket, IPPROTO_IPV6, IPV6_V6ONLY, &no, sizeof(no));
     int flags = fcntl(self.heartbeatSocket, F_GETFL, 0);
     if (flags >= 0) {
         fcntl(self.heartbeatSocket, F_SETFL, flags | O_NONBLOCK);
@@ -550,6 +623,126 @@ static const int UplinCHeartbeatPort = 54176;
     }
 }
 
+- (void)startBonjour {
+    if (self.instanceID.length == 0) {
+        return;
+    }
+
+    self.bonjourService = [[NSNetService alloc] initWithDomain:@"local."
+                                                          type:@"_uplinc._udp."
+                                                          name:self.instanceID
+                                                          port:UplinCHeartbeatPort];
+    self.bonjourService.delegate = self;
+    [self.bonjourService publish];
+
+    self.bonjourBrowser = [[NSNetServiceBrowser alloc] init];
+    self.bonjourBrowser.delegate = self;
+    [self.bonjourBrowser searchForServicesOfType:@"_uplinc._udp." inDomain:@"local."];
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_start name=%@", self.instanceID]];
+}
+
+- (void)stopBonjour {
+    [self.bonjourService stop];
+    [self.bonjourBrowser stop];
+    self.bonjourService = nil;
+    self.bonjourBrowser = nil;
+    [self.bonjourPeers removeAllObjects];
+    [self.bonjourPeerAddresses removeAllObjects];
+    [self appendMedicLog:@"bonjour_stop"];
+}
+
+- (void)netServiceDidPublish:(NSNetService *)sender {
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_published name=%@ port=%ld", sender.name, (long)sender.port]];
+}
+
+- (void)netService:(NSNetService *)sender didNotPublish:(NSDictionary<NSString *, NSNumber *> *)errorDict {
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_publish_failed name=%@ error=%@", sender.name, errorDict[NSNetServicesErrorCode]]];
+}
+
+- (void)netServiceDidResolveAddress:(NSNetService *)sender {
+    NSArray<NSData *> *addrs = sender.addresses ?: @[];
+    NSMutableArray<NSData *> *kept = [[NSMutableArray alloc] init];
+    for (NSData *data in addrs) {
+        if (data.length < sizeof(struct sockaddr)) {
+            continue;
+        }
+        const struct sockaddr *sa = (const struct sockaddr *)data.bytes;
+        if (sa->sa_family != AF_INET6 && sa->sa_family != AF_INET) {
+            continue;
+        }
+        [kept addObject:data];
+    }
+    self.bonjourPeerAddresses[sender.name] = kept;
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_resolved name=%@ count=%lu", sender.name, (unsigned long)kept.count]];
+}
+
+- (void)netService:(NSNetService *)sender didNotResolve:(NSDictionary<NSString *, NSNumber *> *)errorDict {
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_resolve_failed name=%@ error=%@", sender.name, errorDict[NSNetServicesErrorCode]]];
+}
+
+- (void)netServiceBrowser:(NSNetServiceBrowser *)browser didFindService:(NSNetService *)service moreComing:(BOOL)moreComing {
+    (void)browser;
+    (void)moreComing;
+    if ([service.name isEqualToString:self.instanceID]) {
+        return;
+    }
+    if (self.bonjourPeers[service.name] != nil) {
+        return;
+    }
+    service.delegate = self;
+    self.bonjourPeers[service.name] = service;
+    [service resolveWithTimeout:10.0];
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_found name=%@", service.name]];
+}
+
+- (void)netServiceBrowser:(NSNetServiceBrowser *)browser didRemoveService:(NSNetService *)service moreComing:(BOOL)moreComing {
+    (void)browser;
+    (void)moreComing;
+    [self.bonjourPeers removeObjectForKey:service.name];
+    [self.bonjourPeerAddresses removeObjectForKey:service.name];
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_removed name=%@", service.name]];
+}
+
+- (void)netServiceBrowser:(NSNetServiceBrowser *)browser didNotSearch:(NSDictionary<NSString *, NSNumber *> *)errorDict {
+    (void)browser;
+    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_browse_failed error=%@", errorDict[NSNetServicesErrorCode]]];
+}
+
+- (NSInteger)sendHeartbeatViaBonjour {
+    if (self.heartbeatSocket < 0 || self.bonjourPeerAddresses.count == 0) {
+        return 0;
+    }
+
+    NSString *host = [self sanitizedToken:([[NSHost currentHost] localizedName] ?: [[NSHost currentHost] name] ?: @"unknown")];
+    NSString *payloadString = [NSString stringWithFormat:@"UPLINC 1 id=%@ host=%@ mode=%@ effective=%@ time=%.0f", self.instanceID, host, self.modePreference, self.parentModeEnabled ? @"parent" : @"child", [[NSDate date] timeIntervalSince1970]];
+    NSData *payloadData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
+
+    NSInteger sentCount = 0;
+    for (NSString *peerName in [self.bonjourPeerAddresses.allKeys copy]) {
+        NSArray<NSData *> *addrs = self.bonjourPeerAddresses[peerName];
+        for (NSData *addrData in addrs) {
+            if (addrData.length < sizeof(struct sockaddr_in6)) {
+                continue;
+            }
+            const struct sockaddr *sa = (const struct sockaddr *)addrData.bytes;
+            if (sa->sa_family != AF_INET6) {
+                continue;
+            }
+            struct sockaddr_in6 dest;
+            memset(&dest, 0, sizeof(dest));
+            memcpy(&dest, addrData.bytes, MIN(addrData.length, sizeof(dest)));
+            dest.sin6_port = htons(UplinCHeartbeatPort);
+            ssize_t sent = sendto(self.heartbeatSocket, payloadData.bytes, payloadData.length, 0, (struct sockaddr *)&dest, sizeof(dest));
+            if (sent < 0) {
+                [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_bonjour_send failed peer=%@ errno=%d", peerName, errno]];
+            } else {
+                sentCount += 1;
+            }
+        }
+    }
+    return sentCount;
+}
+
 - (void)drainHeartbeatSocket {
     if (self.heartbeatSocket < 0) {
         return;
@@ -570,9 +763,20 @@ static const int UplinCHeartbeatPort = 54176;
             continue;
         }
 
-        char senderAddress[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET6, &sender.sin6_addr, senderAddress, sizeof(senderAddress));
-        NSString *senderAddressString = [NSString stringWithUTF8String:senderAddress] ?: @"unknown";
+        struct in6_addr canonicalAddr = sender.sin6_addr;
+        uint32_t canonicalScope = sender.sin6_scope_id;
+        if (IN6_IS_ADDR_LINKLOCAL(&canonicalAddr)) {
+            uint16_t embedded = (uint16_t)((canonicalAddr.s6_addr[2] << 8) | canonicalAddr.s6_addr[3]);
+            if (embedded != 0 && canonicalScope == 0) {
+                canonicalScope = embedded;
+            }
+            canonicalAddr.s6_addr[2] = 0;
+            canonicalAddr.s6_addr[3] = 0;
+        }
+        NSString *senderAddressString = [self formatIPv6Address:&canonicalAddr scopeID:canonicalScope];
+        if (senderAddressString.length == 0) {
+            senderAddressString = @"unknown";
+        }
         NSDictionary<NSString *, NSString *> *fields = [self heartbeatFieldsFromPayload:payload];
         NSString *peerID = fields[@"id"] ?: senderAddressString;
         NSString *peerHost = fields[@"host"] ?: senderAddressString;
@@ -595,34 +799,6 @@ static const int UplinCHeartbeatPort = 54176;
         self.lastHeartbeatReceivedAt = [NSDate date];
         self.missedHeartbeatChecks = 0;
         [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_received from=%@ id=%@ host=%@ mode=%@ effective=%@ payload=\"%@\"", senderAddressString, peerID, peerHost, peerMode, peerEffective, [self sanitizedSingleLine:payload maxLength:160]]];
-    }
-}
-
-- (void)sendHeartbeatToPeerAddresses:(NSArray<NSString *> *)peerAddresses {
-    if (self.heartbeatSocket < 0 || peerAddresses.count == 0) {
-        return;
-    }
-
-    NSString *host = [self sanitizedToken:([[NSHost currentHost] localizedName] ?: [[NSHost currentHost] name] ?: @"unknown")];
-    NSString *payload = [NSString stringWithFormat:@"UPLINC 1 id=%@ host=%@ mode=%@ effective=%@ time=%.0f", self.instanceID, host, self.modePreference, self.parentModeEnabled ? @"parent" : @"child", [[NSDate date] timeIntervalSince1970]];
-    NSData *payloadData = [payload dataUsingEncoding:NSUTF8StringEncoding];
-
-    for (NSString *peerAddress in peerAddresses) {
-        struct sockaddr_in6 destination;
-        memset(&destination, 0, sizeof(destination));
-        destination.sin6_len = sizeof(destination);
-        destination.sin6_family = AF_INET6;
-        destination.sin6_port = htons(UplinCHeartbeatPort);
-
-        if (inet_pton(AF_INET6, peerAddress.UTF8String, &destination.sin6_addr) != 1) {
-            [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_send skipped invalidAddress=%@", peerAddress]];
-            continue;
-        }
-
-        ssize_t sent = sendto(self.heartbeatSocket, payloadData.bytes, payloadData.length, 0, (struct sockaddr *)&destination, sizeof(destination));
-        if (sent < 0) {
-            [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_send failed peer=%@ errno=%d", peerAddress, errno]];
-        }
     }
 }
 
@@ -890,7 +1066,70 @@ static const int UplinCHeartbeatPort = 54176;
         return nil;
     }
 
-    return [line substringWithRange:NSMakeRange(addressStart, closeBracket.location - addressStart)];
+    NSString *raw = [line substringWithRange:NSMakeRange(addressStart, closeBracket.location - addressStart)];
+    return [self canonicalIPv6String:raw] ?: raw;
+}
+
+- (BOOL)parseIPv6Address:(NSString *)addressString into:(struct in6_addr *)outAddr scopeID:(uint32_t *)outScopeID {
+    if (addressString.length == 0 || outAddr == NULL || outScopeID == NULL) {
+        return NO;
+    }
+
+    NSString *hostPart = addressString;
+    uint32_t scope = 0;
+    NSRange percent = [addressString rangeOfString:@"%"];
+    if (percent.location != NSNotFound) {
+        hostPart = [addressString substringToIndex:percent.location];
+        NSString *scopePart = [addressString substringFromIndex:percent.location + 1];
+        int parsed = 0;
+        NSScanner *scanner = [NSScanner scannerWithString:scopePart];
+        if ([scanner scanInt:&parsed] && scanner.atEnd && parsed > 0) {
+            scope = (uint32_t)parsed;
+        } else {
+            unsigned int idx = if_nametoindex(scopePart.UTF8String);
+            scope = idx;
+        }
+    }
+
+    struct in6_addr addr;
+    memset(&addr, 0, sizeof(addr));
+    if (inet_pton(AF_INET6, hostPart.UTF8String, &addr) != 1) {
+        return NO;
+    }
+
+    if (IN6_IS_ADDR_LINKLOCAL(&addr)) {
+        uint16_t embedded = (uint16_t)((addr.s6_addr[2] << 8) | addr.s6_addr[3]);
+        if (embedded != 0 && scope == 0) {
+            scope = embedded;
+        }
+        addr.s6_addr[2] = 0;
+        addr.s6_addr[3] = 0;
+    }
+
+    *outAddr = addr;
+    *outScopeID = scope;
+    return YES;
+}
+
+- (NSString *)formatIPv6Address:(const struct in6_addr *)addr scopeID:(uint32_t)scopeID {
+    char buf[INET6_ADDRSTRLEN];
+    if (inet_ntop(AF_INET6, addr, buf, sizeof(buf)) == NULL) {
+        return @"";
+    }
+    NSString *base = [NSString stringWithUTF8String:buf] ?: @"";
+    if (scopeID > 0 && IN6_IS_ADDR_LINKLOCAL(addr)) {
+        return [NSString stringWithFormat:@"%@%%%u", base, scopeID];
+    }
+    return base;
+}
+
+- (NSString *)canonicalIPv6String:(NSString *)addressString {
+    struct in6_addr addr;
+    uint32_t scope = 0;
+    if (![self parseIPv6Address:addressString into:&addr scopeID:&scope]) {
+        return nil;
+    }
+    return [self formatIPv6Address:&addr scopeID:scope];
 }
 
 - (int)run:(NSString *)executable arguments:(NSArray<NSString *> *)arguments {
