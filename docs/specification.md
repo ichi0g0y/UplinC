@@ -274,16 +274,16 @@ The `build/` directory is ignored by git.
 Release package command:
 
 ```sh
-make package
+CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" NOTARYTOOL_PROFILE=uplinc make package
 ```
 
 Generated archive:
 
 ```text
-dist/UplinC-0.1.1.zip
+dist/UplinC-0.1.2.zip
 ```
 
-The `dist/` directory is ignored by git. Upload the archive to the matching GitHub Release tag before updating the cask in `ichi0g0y/homebrew-tap`.
+The `dist/` directory is ignored by git. The package command signs with the configured Developer ID identity, submits the app for notarization, staples the ticket, and verifies Gatekeeper assessment before creating the final archive. Upload the archive to the matching GitHub Release tag before updating the cask in `ichi0g0y/homebrew-tap`.
 
 Homebrew install:
 
