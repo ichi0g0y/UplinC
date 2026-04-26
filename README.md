@@ -44,7 +44,7 @@ Create the release archive:
 make package
 ```
 
-Upload the generated `dist/UplinC-0.1.0.zip` file to the matching GitHub Release tag, then update the `uplinc` cask in `ichi0g0y/homebrew-tap`.
+Upload the generated `dist/UplinC-0.1.1.zip` file to the matching GitHub Release tag, then update the `uplinc` cask in `ichi0g0y/homebrew-tap`.
 
 Install with Homebrew:
 

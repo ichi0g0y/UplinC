@@ -280,7 +280,7 @@ make package
 Generated archive:
 
 ```text
-dist/UplinC-0.1.0.zip
+dist/UplinC-0.1.1.zip
 ```
 
 The `dist/` directory is ignored by git. Upload the archive to the matching GitHub Release tag before updating the cask in `ichi0g0y/homebrew-tap`.
