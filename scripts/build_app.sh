@@ -12,5 +12,6 @@ mkdir -p "$APP/Contents/MacOS"
 clang -fobjc-arc -framework AppKit -framework UserNotifications "$ROOT/Sources/UplinC/main.m" -o "$EXEC"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 chmod +x "$EXEC"
+codesign --force --deep --sign - "$APP"
 
 echo "$APP"
