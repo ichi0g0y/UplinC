@@ -121,6 +121,7 @@ static const int UplinCHeartbeatPort = 54176;
     self.versionMenuItem = [[NSMenuItem alloc] initWithTitle:versionTitle action:nil keyEquivalent:@""];
     self.versionMenuItem.enabled = NO;
     self.machinesSubmenu = [[NSMenu alloc] initWithTitle:@"Machines"];
+    self.machinesSubmenu.autoenablesItems = NO;
     self.machinesMenuItem = [[NSMenuItem alloc] initWithTitle:@"Machines" action:nil keyEquivalent:@""];
     self.machinesMenuItem.submenu = self.machinesSubmenu;
     self.lastResetMenuItem = [[NSMenuItem alloc] initWithTitle:@"Last reset: never" action:nil keyEquivalent:@""];
@@ -162,8 +163,8 @@ static const int UplinCHeartbeatPort = 54176;
     [menu addItem:self.logStatusMenuItem];
     [menu addItem:self.tcpStatusMenuItem];
     [menu addItem:self.heartbeatStatusMenuItem];
-    [menu addItem:self.machinesMenuItem];
     [menu addItem:self.lastResetMenuItem];
+    [menu addItem:self.machinesMenuItem];
     [menu addItem:self.logFileMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:resetItem];
@@ -903,7 +904,6 @@ static const int UplinCHeartbeatPort = 54176;
 
     if (peers.count == 0) {
         NSMenuItem *empty = [[NSMenuItem alloc] initWithTitle:@"No peers" action:nil keyEquivalent:@""];
-        empty.enabled = NO;
         [self.machinesSubmenu addItem:empty];
         self.machinesMenuItem.title = @"Machines";
         return;
@@ -926,7 +926,6 @@ static const int UplinCHeartbeatPort = 54176;
         NSTimeInterval age = [lastSeen isKindOfClass:[NSDate class]] ? [now timeIntervalSinceDate:lastSeen] : 0;
         NSString *title = [NSString stringWithFormat:@"%@ (%@→%@) %.0fs ago", host, mode, effective, age];
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
-        item.enabled = NO;
         NSString *address = peer[@"address"];
         if ([address isKindOfClass:[NSString class]] && address.length > 0) {
             item.toolTip = address;
