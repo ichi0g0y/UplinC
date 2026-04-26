@@ -189,7 +189,7 @@ Strong reset signals:
 
 - `UniversalControl` process is missing.
 - `UniversalControl` TCP links were seen and then disappear for 60 seconds.
-- UplinC heartbeat disappears while Universal Control TCP links are also missing.
+- UplinC heartbeat from a Universal Control TCP peer disappears for 30 seconds while that peer's TCP link is also missing. Per-peer evaluation: a heartbeat-stale peer whose TCP connection has dropped triggers a reset even if other peers remain healthy.
 
 Weak reset signal:
 
