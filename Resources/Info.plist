@@ -20,5 +20,11 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Local utility</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>UplinC exchanges UDP heartbeats with the paired Mac to detect Universal Control disconnects.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_uplinc._udp</string>
+    </array>
 </dict>
 </plist>
