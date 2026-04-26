@@ -280,7 +280,7 @@ CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" NOTARYTOOL_PROFIL
 Generated archive:
 
 ```text
-dist/UplinC-0.1.4.zip
+dist/UplinC-0.1.5.zip
 ```
 
 The `dist/` directory is ignored by git. The package command signs with the configured Developer ID identity, submits the app for notarization, staples the ticket, and verifies Gatekeeper assessment before creating the final archive. Upload the archive to the matching GitHub Release tag before updating the cask in `ichi0g0y/homebrew-tap`.
