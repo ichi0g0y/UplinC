@@ -17,7 +17,9 @@ static const int UplinCHeartbeatPort = 54176;
 @property NSMenuItem *logStatusMenuItem;
 @property NSMenuItem *tcpStatusMenuItem;
 @property NSMenuItem *heartbeatStatusMenuItem;
-@property NSMenuItem *peerStatusMenuItem;
+@property NSMenuItem *versionMenuItem;
+@property NSMenuItem *machinesMenuItem;
+@property NSMenu *machinesSubmenu;
 @property NSMenuItem *lastResetMenuItem;
 @property NSMenuItem *logFileMenuItem;
 @property NSMenuItem *autoHealMenuItem;
@@ -112,8 +114,13 @@ static const int UplinCHeartbeatPort = 54176;
     self.tcpStatusMenuItem.enabled = NO;
     self.heartbeatStatusMenuItem = [[NSMenuItem alloc] initWithTitle:@"Heartbeat: starting" action:nil keyEquivalent:@""];
     self.heartbeatStatusMenuItem.enabled = NO;
-    self.peerStatusMenuItem = [[NSMenuItem alloc] initWithTitle:@"Peers: none" action:nil keyEquivalent:@""];
-    self.peerStatusMenuItem.enabled = NO;
+    NSString *bundleVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    NSString *versionTitle = bundleVersion.length > 0 ? [NSString stringWithFormat:@"UplinC v%@", bundleVersion] : @"UplinC";
+    self.versionMenuItem = [[NSMenuItem alloc] initWithTitle:versionTitle action:nil keyEquivalent:@""];
+    self.versionMenuItem.enabled = NO;
+    self.machinesSubmenu = [[NSMenu alloc] initWithTitle:@"Machines"];
+    self.machinesMenuItem = [[NSMenuItem alloc] initWithTitle:@"Machines" action:nil keyEquivalent:@""];
+    self.machinesMenuItem.submenu = self.machinesSubmenu;
     self.lastResetMenuItem = [[NSMenuItem alloc] initWithTitle:@"Last reset: never" action:nil keyEquivalent:@""];
     self.lastResetMenuItem.enabled = NO;
     self.logFileMenuItem = [[NSMenuItem alloc] initWithTitle:@"Open Log File" action:@selector(openLogFile:) keyEquivalent:@""];
@@ -147,23 +154,26 @@ static const int UplinCHeartbeatPort = 54176;
     NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quitItem.target = self;
 
+    [menu addItem:self.versionMenuItem];
     [menu addItem:self.statusMenuItem];
     [menu addItem:self.lastCheckMenuItem];
     [menu addItem:self.logStatusMenuItem];
     [menu addItem:self.tcpStatusMenuItem];
     [menu addItem:self.heartbeatStatusMenuItem];
-    [menu addItem:self.peerStatusMenuItem];
+    [menu addItem:self.machinesMenuItem];
     [menu addItem:self.lastResetMenuItem];
     [menu addItem:self.logFileMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:resetItem];
-    [menu addItem:self.autoHealMenuItem];
+    [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:self.parentModeMenuItem];
+    [menu addItem:self.autoHealMenuItem];
     [menu addItem:self.logWatchMenuItem];
     [menu addItem:self.tcpWatchMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:quitItem];
     self.statusItem.menu = menu;
+    [self rebuildMachinesSubmenu];
     [self updateToggleStates];
 }
 
@@ -868,16 +878,51 @@ static const int UplinCHeartbeatPort = 54176;
         fullSummary = [NSString stringWithFormat:@"Peers: UC %@ | UplinC %@", [ucPeerAddresses componentsJoinedByString:@","], [fullParts componentsJoinedByString:@"; "]];
     }
 
-    if (summary.length > 160) {
-        summary = [[summary substringToIndex:157] stringByAppendingString:@"..."];
-    }
-    self.peerStatusMenuItem.title = summary;
-
     if (![summary isEqualToString:self.lastLoggedPeerSummary]) {
         [self appendMedicLog:[NSString stringWithFormat:@"peer_summary %@", fullSummary ?: summary]];
         self.lastLoggedPeerSummary = summary;
     }
+    [self rebuildMachinesSubmenu];
     [self updateToggleStates];
+}
+
+- (void)rebuildMachinesSubmenu {
+    NSArray<NSDictionary<NSString *, id> *> *peers = [self recentHeartbeatPeers];
+    [self.machinesSubmenu removeAllItems];
+
+    if (peers.count == 0) {
+        NSMenuItem *empty = [[NSMenuItem alloc] initWithTitle:@"No peers" action:nil keyEquivalent:@""];
+        empty.enabled = NO;
+        [self.machinesSubmenu addItem:empty];
+        self.machinesMenuItem.title = @"Machines";
+        return;
+    }
+
+    NSDate *now = [NSDate date];
+    for (NSDictionary<NSString *, id> *peer in peers) {
+        NSString *host = peer[@"host"];
+        if (![host isKindOfClass:[NSString class]] || host.length == 0) {
+            NSString *peerID = peer[@"id"];
+            if ([peerID isKindOfClass:[NSString class]] && peerID.length > 0) {
+                host = [peerID substringToIndex:MIN((NSUInteger)8, peerID.length)];
+            } else {
+                host = @"unknown";
+            }
+        }
+        NSString *mode = peer[@"mode"] ?: @"?";
+        NSString *effective = peer[@"effective"] ?: @"?";
+        NSDate *lastSeen = peer[@"lastSeen"];
+        NSTimeInterval age = [lastSeen isKindOfClass:[NSDate class]] ? [now timeIntervalSinceDate:lastSeen] : 0;
+        NSString *title = [NSString stringWithFormat:@"%@ (%@→%@) %.0fs ago", host, mode, effective, age];
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
+        item.enabled = NO;
+        NSString *address = peer[@"address"];
+        if ([address isKindOfClass:[NSString class]] && address.length > 0) {
+            item.toolTip = address;
+        }
+        [self.machinesSubmenu addItem:item];
+    }
+    self.machinesMenuItem.title = [NSString stringWithFormat:@"Machines: %lu", (unsigned long)peers.count];
 }
 
 - (NSString *)compactAddress:(NSString *)address {
