@@ -99,6 +99,8 @@ extern const int UplinCHeartbeatPort;
 - (void)drainHeartbeatSocket;
 - (NSDictionary<NSString *, NSString *> *)heartbeatFieldsFromPayload:(NSString *)payload;
 - (NSArray<NSDictionary<NSString *, id> *> *)recentHeartbeatPeers;
+- (NSArray<NSDictionary<NSString *, id> *> *)allKnownHeartbeatPeers;
+- (NSString *)formatPeerAge:(NSTimeInterval)age;
 - (void)updatePeerStatusWithUCPeerAddresses:(NSArray<NSString *> *)ucPeerAddresses;
 - (void)rebuildMachinesSubmenu;
 - (NSString *)compactAddress:(NSString *)address;
