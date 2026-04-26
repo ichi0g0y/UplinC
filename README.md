@@ -20,7 +20,7 @@ UplinC watches the local Universal Control stack, tracks peer link health, excha
 ## Build
 
 ```sh
-cd /Users/ichi/abyss/uplinc
+cd UplinC
 make build
 ```
 
@@ -35,6 +35,25 @@ The app bundle is generated at:
 ```text
 build/UplinC.app
 ```
+
+## Homebrew
+
+Create the release archive:
+
+```sh
+make package
+```
+
+Upload the generated `dist/UplinC-0.1.0.zip` file to the matching GitHub Release tag, then update the `uplinc` cask in `ichi0g0y/homebrew-tap`.
+
+Install with Homebrew:
+
+```sh
+brew tap ichi0g0y/tap
+brew install --cask uplinc
+```
+
+Homebrew installs UplinC as an app only. To start it at login, use the LaunchAgent install step from a source checkout.
 
 ## Start At Login
 
@@ -94,10 +113,12 @@ The log records process state changes, TCP connection counts, peer summaries, he
 Sources/UplinC/main.m                 AppKit menu bar app and recovery logic
 Resources/Info.plist                  App bundle metadata
 scripts/build_app.sh                  Builds build/UplinC.app
+scripts/package_release.sh            Builds dist/UplinC-<version>.zip
 scripts/install_launch_agent.sh       Installs the login LaunchAgent
 scripts/uninstall_launch_agent.sh     Removes the login LaunchAgent
 docs/specification.md                 Detailed app specification
 build/                                Ignored build output
+dist/                                 Ignored release archives
 ```
 
 ## Limitations

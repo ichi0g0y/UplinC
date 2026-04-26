@@ -269,6 +269,31 @@ build/UplinC.app
 
 The `build/` directory is ignored by git.
 
+## Homebrew Cask
+
+Release package command:
+
+```sh
+make package
+```
+
+Generated archive:
+
+```text
+dist/UplinC-0.1.0.zip
+```
+
+The `dist/` directory is ignored by git. Upload the archive to the matching GitHub Release tag before updating the cask in `ichi0g0y/homebrew-tap`.
+
+Homebrew install:
+
+```sh
+brew tap ichi0g0y/tap
+brew install --cask uplinc
+```
+
+The cask installs only `UplinC.app`. LaunchAgent registration remains an explicit source-checkout action through `make install`.
+
 ## LaunchAgent
 
 Install:
@@ -300,11 +325,13 @@ The installer removes older LaunchAgents from previous names:
 Sources/UplinC/main.m                 AppKit menu bar app and recovery logic
 Resources/Info.plist                  App bundle metadata
 scripts/build_app.sh                  Builds build/UplinC.app
+scripts/package_release.sh            Builds dist/UplinC-<version>.zip
 scripts/install_launch_agent.sh       Installs the login LaunchAgent
 scripts/uninstall_launch_agent.sh     Removes the login LaunchAgent
 Makefile                              Common build/run/install/check commands
 docs/specification.md                 Detailed app specification
 build/                                Ignored build output
+dist/                                 Ignored release archives
 ```
 
 ## Known Limitations
