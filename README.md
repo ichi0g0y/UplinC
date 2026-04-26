@@ -44,7 +44,7 @@ Create the release archive:
 CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)" NOTARYTOOL_PROFILE=uplinc make package
 ```
 
-Upload the generated `dist/UplinC-0.1.2.zip` file to the matching GitHub Release tag, then update the `uplinc` cask in `ichi0g0y/homebrew-tap`.
+Upload the generated `dist/UplinC-0.1.3.zip` file to the matching GitHub Release tag, then update the `uplinc` cask in `ichi0g0y/homebrew-tap`.
 
 Install with Homebrew:
 
