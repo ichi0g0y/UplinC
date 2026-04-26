@@ -36,6 +36,45 @@
     return peers;
 }
 
+- (NSArray<NSDictionary<NSString *, id> *> *)allKnownHeartbeatPeers {
+    NSMutableArray<NSDictionary<NSString *, id> *> *peers = [[NSMutableArray alloc] init];
+    for (NSMutableDictionary<NSString *, id> *peer in self.heartbeatPeers.allValues) {
+        NSDate *lastSeen = peer[@"lastSeen"];
+        if (![lastSeen isKindOfClass:[NSDate class]]) {
+            continue;
+        }
+        [peers addObject:[peer copy]];
+    }
+    [peers sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        NSString *hostA = ([a[@"host"] isKindOfClass:[NSString class]]) ? a[@"host"] : @"";
+        NSString *hostB = ([b[@"host"] isKindOfClass:[NSString class]]) ? b[@"host"] : @"";
+        return [hostA localizedCaseInsensitiveCompare:hostB];
+    }];
+    return peers;
+}
+
+- (NSString *)formatPeerAge:(NSTimeInterval)age {
+    if (age < 0.0) {
+        age = 0.0;
+    }
+    if (age < 60.0) {
+        return [NSString stringWithFormat:@"%.0fs ago", age];
+    }
+    if (age < 3600.0) {
+        return [NSString stringWithFormat:@"%.0fm ago", age / 60.0];
+    }
+    if (age < 86400.0) {
+        long hours = (long)(age / 3600.0);
+        long minutes = ((long)age % 3600) / 60;
+        if (minutes == 0) {
+            return [NSString stringWithFormat:@"%ldh ago", hours];
+        }
+        return [NSString stringWithFormat:@"%ldh %ldm ago", hours, minutes];
+    }
+    long days = (long)(age / 86400.0);
+    return [NSString stringWithFormat:@"%ldd ago", days];
+}
+
 - (void)updatePeerStatusWithUCPeerAddresses:(NSArray<NSString *> *)ucPeerAddresses {
     NSArray<NSDictionary<NSString *, id> *> *peers = [self recentHeartbeatPeers];
     NSMutableArray<NSString *> *compactUCAddresses = [[NSMutableArray alloc] init];
@@ -77,7 +116,7 @@
 }
 
 - (void)rebuildMachinesSubmenu {
-    NSArray<NSDictionary<NSString *, id> *> *peers = [self recentHeartbeatPeers];
+    NSArray<NSDictionary<NSString *, id> *> *peers = [self allKnownHeartbeatPeers];
     [self.machinesSubmenu removeAllItems];
 
     if (peers.count == 0) {
@@ -88,7 +127,20 @@
     }
 
     NSDate *now = [NSDate date];
+    NSMutableArray<NSDictionary<NSString *, id> *> *online = [[NSMutableArray alloc] init];
+    NSMutableArray<NSDictionary<NSString *, id> *> *offline = [[NSMutableArray alloc] init];
     for (NSDictionary<NSString *, id> *peer in peers) {
+        NSDate *lastSeen = peer[@"lastSeen"];
+        NSTimeInterval age = [lastSeen isKindOfClass:[NSDate class]] ? [now timeIntervalSinceDate:lastSeen] : DBL_MAX;
+        if (age <= 10.0) {
+            [online addObject:peer];
+        } else {
+            [offline addObject:peer];
+        }
+    }
+
+    NSArray<NSDictionary<NSString *, id> *> *ordered = [online arrayByAddingObjectsFromArray:offline];
+    for (NSDictionary<NSString *, id> *peer in ordered) {
         NSString *host = peer[@"host"];
         if (![host isKindOfClass:[NSString class]] || host.length == 0) {
             NSString *peerID = peer[@"id"];
@@ -98,11 +150,17 @@
                 host = @"unknown";
             }
         }
-        NSString *mode = peer[@"mode"] ?: @"?";
-        NSString *effective = peer[@"effective"] ?: @"?";
         NSDate *lastSeen = peer[@"lastSeen"];
         NSTimeInterval age = [lastSeen isKindOfClass:[NSDate class]] ? [now timeIntervalSinceDate:lastSeen] : 0;
-        NSString *title = [NSString stringWithFormat:@"%@ (%@→%@) %.0fs ago", host, mode, effective, age];
+        NSString *ageText = [self formatPeerAge:age];
+        NSString *title;
+        if (age > 10.0) {
+            title = [NSString stringWithFormat:@"%@ [Offline] last seen %@", host, ageText];
+        } else {
+            NSString *mode = peer[@"mode"] ?: @"?";
+            NSString *effective = peer[@"effective"] ?: @"?";
+            title = [NSString stringWithFormat:@"%@ (%@→%@) %@", host, mode, effective, ageText];
+        }
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
         NSString *address = peer[@"address"];
         if ([address isKindOfClass:[NSString class]] && address.length > 0) {
@@ -110,7 +168,7 @@
         }
         [self.machinesSubmenu addItem:item];
     }
-    self.machinesMenuItem.title = [NSString stringWithFormat:@"Machines: %lu", (unsigned long)peers.count];
+    self.machinesMenuItem.title = [NSString stringWithFormat:@"Machines: %lu (%lu online)", (unsigned long)peers.count, (unsigned long)online.count];
 }
 
 @end
