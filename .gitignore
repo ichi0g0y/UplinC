@@ -30,6 +30,16 @@ playground.xcworkspace
 # .swiftpm
 
 .build/
+build/
+*.app/
+*.dSYM/
+*.dSYM.zip
+*.ipa
+*.o
+*.a
+*.dylib
+*.so
+*.DS_Store
 
 # CocoaPods
 #
