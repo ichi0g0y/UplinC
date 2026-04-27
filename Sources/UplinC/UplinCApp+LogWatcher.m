@@ -1,6 +1,6 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 
-@implementation MedicApp (LogWatcher)
+@implementation UplinCApp (LogWatcher)
 
 - (void)startLogWatcher {
     if (!self.logWatchEnabled || self.logTask != nil) {
@@ -19,7 +19,7 @@
     task.standardOutput = pipe;
     task.standardError = [NSPipe pipe];
 
-    __weak MedicApp *weakSelf = self;
+    __weak UplinCApp *weakSelf = self;
     pipe.fileHandleForReading.readabilityHandler = ^(NSFileHandle *handle) {
         NSData *data = [handle availableData];
         if (data.length == 0) {
@@ -35,11 +35,11 @@
     if ([task launchAndReturnError:&error]) {
         self.logTask = task;
         self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
-        [self appendMedicLog:@"log_watch started"];
+        [self appendLog:@"log_watch started"];
     } else {
         self.logWatchEnabled = NO;
         self.logStatusMenuItem.title = @"Log watch: unavailable";
-        [self appendMedicLog:[NSString stringWithFormat:@"log_watch unavailable error=%@", error.localizedDescription ?: @"unknown"]];
+        [self appendLog:[NSString stringWithFormat:@"log_watch unavailable error=%@", error.localizedDescription ?: @"unknown"]];
         [self updateToggleStates];
     }
 }
@@ -48,7 +48,7 @@
     [self.logTask terminate];
     self.logTask = nil;
     self.logStatusMenuItem.title = @"Log watch: stopped";
-    [self appendMedicLog:@"log_watch stopped"];
+    [self appendLog:@"log_watch stopped"];
 }
 
 - (void)handleLog:(NSString *)text {
@@ -87,11 +87,11 @@
     self.lastFailureLogAt = now;
     self.failureLogHits += 1;
     self.logStatusMenuItem.title = [NSString stringWithFormat:@"Log watch: running, failures %ld/4", (long)self.failureLogHits];
-    [self appendMedicLog:[NSString stringWithFormat:@"failure_log hit=%ld/4 line=\"%@\"", (long)self.failureLogHits, [self sanitizedSingleLine:text maxLength:500]]];
+    [self appendLog:[NSString stringWithFormat:@"failure_log hit=%ld/4 line=\"%@\"", (long)self.failureLogHits, [self sanitizedSingleLine:text maxLength:500]]];
     if ([self canAutoReset] && self.failureLogHits >= 4) {
         self.failureLogHits = 0;
         self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
-        [self appendMedicLog:@"trigger failure_logs count=4 windowSeconds=120"];
+        [self appendLog:@"trigger failure_logs count=4 windowSeconds=120"];
         [self resetUniversalControl:@"Universal Control failure logs were detected" force:NO manual:NO];
     }
 }

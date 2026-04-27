@@ -4,7 +4,7 @@
 
 extern const int UplinCHeartbeatPort;
 
-@interface MedicApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate, NSNetServiceDelegate, NSNetServiceBrowserDelegate>
+@interface UplinCApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate, NSNetServiceDelegate, NSNetServiceBrowserDelegate>
 @property NSStatusItem *statusItem;
 @property NSMenuItem *statusMenuItem;
 @property NSMenuItem *lastCheckMenuItem;
@@ -58,7 +58,7 @@ extern const int UplinCHeartbeatPort;
 @property NSInteger missedTCPChecks;
 @end
 
-@interface MedicApp (Internal)
+@interface UplinCApp (Internal)
 - (void)applicationDidFinishLaunching:(NSNotification *)notification;
 - (void)applicationWillTerminate:(NSNotification *)notification;
 - (void)configureMenu;
@@ -110,10 +110,10 @@ extern const int UplinCHeartbeatPort;
 - (NSString *)sanitizedToken:(NSString *)value;
 - (void)setStatusIcon:(NSString *)symbolName fallbackTitle:(NSString *)fallbackTitle description:(NSString *)description;
 - (NSString *)formattedTime:(NSDate *)date;
-- (NSString *)medicLogPath;
-- (void)appendMedicLog:(NSString *)message;
-- (void)ensureMedicLogFileExists;
-- (void)rotateMedicLogIfNeeded;
+- (NSString *)logPath;
+- (void)appendLog:(NSString *)message;
+- (void)ensureLogFileExists;
+- (void)rotateLogIfNeeded;
 - (NSString *)logTimestamp;
 - (NSString *)sanitizedSingleLine:(NSString *)text maxLength:(NSUInteger)maxLength;
 - (void)notifyResetComplete:(NSString *)reason manual:(BOOL)manual;

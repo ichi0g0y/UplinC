@@ -1,6 +1,6 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 
-@implementation MedicApp (Health)
+@implementation UplinCApp (Health)
 
 - (void)startHealthTimer {
     self.healthTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(checkHealth) userInfo:nil repeats:YES];
@@ -23,7 +23,7 @@
     self.statusMenuItem.title = running ? @"UniversalControl: running" : @"UniversalControl: missing";
     self.lastCheckMenuItem.title = [NSString stringWithFormat:@"Last check: %@", [self formattedTime:[NSDate date]]];
     if (!self.hasLastUniversalControlRunning || self.lastUniversalControlRunning != running) {
-        [self appendMedicLog:[NSString stringWithFormat:@"process_state UniversalControl=%@", running ? @"running" : @"missing"]];
+        [self appendLog:[NSString stringWithFormat:@"process_state UniversalControl=%@", running ? @"running" : @"missing"]];
         self.lastUniversalControlRunning = running;
         self.hasLastUniversalControlRunning = YES;
     }
@@ -34,7 +34,7 @@
     }
 
     if ([self canAutoReset] && !running) {
-        [self appendMedicLog:@"trigger process_missing reason=UniversalControl"];
+        [self appendLog:@"trigger process_missing reason=UniversalControl"];
         [self resetUniversalControl:@"UniversalControl process was missing" force:YES manual:NO];
     }
 
@@ -50,20 +50,20 @@
     NSArray<NSString *> *ucPeerAddresses = nil;
     [self getTCPConnectionCount:&ucConnectionCount rapportLinkLocalCount:&rapportLinkLocalCount ucPeerAddresses:&ucPeerAddresses];
     if (ucConnectionCount != self.lastLoggedUCConnectionCount || rapportLinkLocalCount != self.lastLoggedRapportLinkLocalCount) {
-        [self appendMedicLog:[NSString stringWithFormat:@"tcp_state ucConnections=%ld rapportLinkLocal=%ld seen=%@ misses=%ld", (long)ucConnectionCount, (long)rapportLinkLocalCount, self.tcpLinkHasBeenSeen ? @"yes" : @"no", (long)self.missedTCPChecks]];
+        [self appendLog:[NSString stringWithFormat:@"tcp_state ucConnections=%ld rapportLinkLocal=%ld seen=%@ misses=%ld", (long)ucConnectionCount, (long)rapportLinkLocalCount, self.tcpLinkHasBeenSeen ? @"yes" : @"no", (long)self.missedTCPChecks]];
         self.lastLoggedUCConnectionCount = ucConnectionCount;
         self.lastLoggedRapportLinkLocalCount = rapportLinkLocalCount;
     }
 
     if (ucConnectionCount > 0) {
         if (self.missedTCPChecks > 0) {
-            [self appendMedicLog:[NSString stringWithFormat:@"tcp_recovered previousMisses=%ld ucConnections=%ld", (long)self.missedTCPChecks, (long)ucConnectionCount]];
+            [self appendLog:[NSString stringWithFormat:@"tcp_recovered previousMisses=%ld ucConnections=%ld", (long)self.missedTCPChecks, (long)ucConnectionCount]];
         }
         self.tcpLinkHasBeenSeen = YES;
         self.missedTCPChecks = 0;
     } else if (self.tcpLinkHasBeenSeen) {
         self.missedTCPChecks += 1;
-        [self appendMedicLog:[NSString stringWithFormat:@"tcp_missing miss=%ld/12", (long)self.missedTCPChecks]];
+        [self appendLog:[NSString stringWithFormat:@"tcp_missing miss=%ld/12", (long)self.missedTCPChecks]];
     }
 
     NSString *ucState = self.tcpLinkHasBeenSeen ? [NSString stringWithFormat:@"UC %ld", (long)ucConnectionCount] : @"UC unseen";
@@ -76,7 +76,7 @@
         self.missedTCPChecks = 0;
         self.tcpLinkHasBeenSeen = NO;
         self.tcpStatusMenuItem.title = @"TCP link: reset triggered";
-        [self appendMedicLog:@"trigger tcp_missing misses=12 durationSeconds=60"];
+        [self appendLog:@"trigger tcp_missing misses=12 durationSeconds=60"];
         [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES manual:NO];
     } else if (!self.resetInProgress && self.tcpLinkHasBeenSeen && self.missedTCPChecks > 0) {
         [self setStatusIcon:@"exclamationmark.triangle" fallbackTitle:@"UC!" description:@"Universal Control TCP links missing"];
@@ -87,7 +87,7 @@
     NSArray<NSString *> *peerAddresses = [self universalControlPeerAddresses];
 
     if ((NSInteger)peerAddresses.count != self.lastLoggedHeartbeatPeerCount) {
-        [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_peers count=%ld addresses=%@", (long)peerAddresses.count, [peerAddresses componentsJoinedByString:@","]]];
+        [self appendLog:[NSString stringWithFormat:@"heartbeat_peers count=%ld addresses=%@", (long)peerAddresses.count, [peerAddresses componentsJoinedByString:@","]]];
         self.lastLoggedHeartbeatPeerCount = peerAddresses.count;
     }
 
@@ -143,7 +143,7 @@
 
     if ([self canAutoReset] && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= 6 && self.ucPeersEverSeen.count > 0 && peerAddresses.count == 0) {
         self.missedHeartbeatChecks = 0;
-        [self appendMedicLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=6 tcpAlsoMissing=yes ucPeersEverSeen=%lu", (unsigned long)self.ucPeersEverSeen.count]];
+        [self appendLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=6 tcpAlsoMissing=yes ucPeersEverSeen=%lu", (unsigned long)self.ucPeersEverSeen.count]];
         [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES manual:NO];
     }
 }
@@ -151,14 +151,14 @@
 - (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual {
     NSDate *now = [NSDate date];
     if (!force && [now timeIntervalSinceDate:self.lastResetAttempt] < 300.0) {
-        [self appendMedicLog:[NSString stringWithFormat:@"reset_suppressed cooldown reason=\"%@\" secondsSinceLast=%.1f", reason, [now timeIntervalSinceDate:self.lastResetAttempt]]];
+        [self appendLog:[NSString stringWithFormat:@"reset_suppressed cooldown reason=\"%@\" secondsSinceLast=%.1f", reason, [now timeIntervalSinceDate:self.lastResetAttempt]]];
         return;
     }
     self.lastResetAttempt = now;
     self.resetInProgress = YES;
     self.statusMenuItem.title = [NSString stringWithFormat:@"Resetting: %@", reason];
     [self setStatusIcon:@"arrow.triangle.2.circlepath" fallbackTitle:@"UC..." description:@"Universal Control restarting"];
-    [self appendMedicLog:[NSString stringWithFormat:@"reset_start force=%@ reason=\"%@\"", force ? @"yes" : @"no", reason]];
+    [self appendLog:[NSString stringWithFormat:@"reset_start force=%@ reason=\"%@\"", force ? @"yes" : @"no", reason]];
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         int killUC = [self run:@"/usr/bin/killall" arguments:@[@"UniversalControl"]];
@@ -166,7 +166,7 @@
         int killSharing = [self run:@"/usr/bin/killall" arguments:@[@"sharingd"]];
         [NSThread sleepForTimeInterval:2.0];
         int openStatus = [self run:@"/usr/bin/open" arguments:@[@"-gj", @"/System/Library/CoreServices/UniversalControl.app"]];
-        [self appendMedicLog:[NSString stringWithFormat:@"reset_commands killUniversalControl=%d killSidecarRelay=%d killSharingd=%d openUniversalControl=%d", killUC, killSidecar, killSharing, openStatus]];
+        [self appendLog:[NSString stringWithFormat:@"reset_commands killUniversalControl=%d killSidecarRelay=%d killSharingd=%d openUniversalControl=%d", killUC, killSidecar, killSharing, openStatus]];
 
         dispatch_async(dispatch_get_main_queue(), ^{
             NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
@@ -176,7 +176,7 @@
             self.statusMenuItem.title = @"Reset complete";
             self.resetInProgress = NO;
             [self setStatusIcon:@"link" fallbackTitle:@"UC" description:@"Universal Control OK"];
-            [self appendMedicLog:[NSString stringWithFormat:@"reset_complete reason=\"%@\"", reason]];
+            [self appendLog:[NSString stringWithFormat:@"reset_complete reason=\"%@\"", reason]];
             [self notifyResetComplete:reason manual:manual];
         });
     });

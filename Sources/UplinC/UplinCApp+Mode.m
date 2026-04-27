@@ -1,6 +1,6 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 
-@implementation MedicApp (Mode)
+@implementation UplinCApp (Mode)
 
 - (BOOL)canAutoReset {
     return self.autoHealEnabled && self.parentModeEnabled;
@@ -59,7 +59,7 @@
     }
 
     if (oldValue != self.parentModeEnabled) {
-        [self appendMedicLog:[NSString stringWithFormat:@"effective_role changed modePreference=%@ effectiveRole=%@", self.modePreference, [self effectiveRoleLabel]]];
+        [self appendLog:[NSString stringWithFormat:@"effective_role changed modePreference=%@ effectiveRole=%@", self.modePreference, [self effectiveRoleLabel]]];
     }
 }
 

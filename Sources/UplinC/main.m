@@ -1,8 +1,8 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 
 const int UplinCHeartbeatPort = 54176;
 
-@implementation MedicApp
+@implementation UplinCApp
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
@@ -24,7 +24,7 @@ const int UplinCHeartbeatPort = 54176;
     [self configureNotifications];
     [self startHeartbeatSocket];
     [self startBonjour];
-    [self appendMedicLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ modePreference=%@ effectiveRole=%@ autoHeal=%@ notifications=%@ logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.modePreference, [self effectiveRoleLabel], self.autoHealEnabled ? @"on" : @"off", self.notificationsEnabled ? @"on" : @"off"]];
+    [self appendLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ modePreference=%@ effectiveRole=%@ autoHeal=%@ notifications=%@ logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.modePreference, [self effectiveRoleLabel], self.autoHealEnabled ? @"on" : @"off", self.notificationsEnabled ? @"on" : @"off"]];
     [self startHealthTimer];
     [self startHeartbeatTimer];
     [self startLogWatcher];
@@ -33,7 +33,7 @@ const int UplinCHeartbeatPort = 54176;
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
     (void)notification;
-    [self appendMedicLog:@"app_stop"];
+    [self appendLog:@"app_stop"];
     [self stopLogWatcher];
     [self stopBonjour];
     [self stopHeartbeatSocket];
@@ -55,7 +55,7 @@ int main(int argc, const char *argv[]) {
     (void)argv;
     @autoreleasepool {
         NSApplication *app = [NSApplication sharedApplication];
-        MedicApp *delegate = [[MedicApp alloc] init];
+        UplinCApp *delegate = [[UplinCApp alloc] init];
         app.delegate = delegate;
         [app run];
     }

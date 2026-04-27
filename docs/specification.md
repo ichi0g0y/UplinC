@@ -317,7 +317,6 @@ local.uplinc
 The installer removes older LaunchAgents from previous names:
 
 - `local.uc-pulse`
-- `local.universal-control-medic`
 
 ## Project Layout
 

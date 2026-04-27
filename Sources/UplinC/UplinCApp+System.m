@@ -1,9 +1,9 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <string.h>
 
-@implementation MedicApp (System)
+@implementation UplinCApp (System)
 
 - (BOOL)isProcessRunning:(NSString *)name {
     return [self run:@"/usr/bin/pgrep" arguments:@[@"-x", name]] == 0;
