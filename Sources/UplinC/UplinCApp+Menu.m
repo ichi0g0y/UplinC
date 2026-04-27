@@ -1,4 +1,5 @@
 #import "UplinCApp.h"
+#import <ServiceManagement/ServiceManagement.h>
 
 @implementation UplinCApp (Menu)
 
@@ -44,6 +45,8 @@
     self.logWatchMenuItem.target = self;
     self.tcpWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch TCP Link" action:@selector(toggleTCPWatch:) keyEquivalent:@""];
     self.tcpWatchMenuItem.target = self;
+    self.launchAtLoginMenuItem = [[NSMenuItem alloc] initWithTitle:@"Launch at Login" action:@selector(toggleLaunchAtLogin:) keyEquivalent:@""];
+    self.launchAtLoginMenuItem.target = self;
 
     NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quitItem.target = self;
@@ -65,6 +68,7 @@
     [menu addItem:self.syncResetMenuItem];
     [menu addItem:self.logWatchMenuItem];
     [menu addItem:self.tcpWatchMenuItem];
+    [menu addItem:self.launchAtLoginMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:quitItem];
     self.statusItem.menu = menu;
@@ -118,6 +122,25 @@
     [self appendLog:[NSString stringWithFormat:@"setting tcpWatch=%@", self.tcpWatchEnabled ? @"on" : @"off"]];
 }
 
+- (void)toggleLaunchAtLogin:(id)sender {
+    (void)sender;
+    SMAppService *service = SMAppService.mainAppService;
+    BOOL wasEnabled = (service.status == SMAppServiceStatusEnabled);
+    NSError *error = nil;
+    BOOL ok = wasEnabled
+        ? [service unregisterAndReturnError:&error]
+        : [service registerAndReturnError:&error];
+    BOOL nowEnabled = (service.status == SMAppServiceStatusEnabled);
+    if (!ok || error) {
+        [self appendLog:[NSString stringWithFormat:@"launchAtLogin %@ failed: %@",
+            wasEnabled ? @"unregister" : @"register",
+            error.localizedDescription ?: @"unknown error"]];
+    } else {
+        [self appendLog:[NSString stringWithFormat:@"setting launchAtLogin=%@", nowEnabled ? @"on" : @"off"]];
+    }
+    [self updateToggleStates];
+}
+
 - (void)openLogFile:(id)sender {
     (void)sender;
     [self ensureLogFileExists];
@@ -136,6 +159,9 @@
     self.syncResetMenuItem.state = self.syncResetEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.logWatchMenuItem.state = self.logWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.tcpWatchMenuItem.state = self.tcpWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    self.launchAtLoginMenuItem.state = (SMAppService.mainAppService.status == SMAppServiceStatusEnabled)
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
 }
 
 @end
