@@ -92,7 +92,7 @@
         self.failureLogHits = 0;
         self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
         [self appendLog:@"trigger failure_logs count=4 windowSeconds=120"];
-        [self resetUniversalControl:@"Universal Control failure logs were detected" force:NO manual:NO];
+        [self resetUniversalControl:@"Universal Control failure logs were detected" force:NO manual:NO broadcast:YES];
     }
 }
 

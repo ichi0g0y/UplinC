@@ -38,21 +38,8 @@
     self.autoHealMenuItem.target = self;
     self.notificationsMenuItem = [[NSMenuItem alloc] initWithTitle:@"Notifications" action:@selector(toggleNotifications:) keyEquivalent:@""];
     self.notificationsMenuItem.target = self;
-    self.parentModeMenuItem = [[NSMenuItem alloc] initWithTitle:@"Mode: Auto" action:nil keyEquivalent:@""];
-    NSMenu *modeSubmenu = [[NSMenu alloc] initWithTitle:@"Mode"];
-    self.modeAutoMenuItem = [[NSMenuItem alloc] initWithTitle:@"Auto" action:@selector(selectMode:) keyEquivalent:@""];
-    self.modeAutoMenuItem.target = self;
-    self.modeAutoMenuItem.representedObject = @"auto";
-    self.modeParentMenuItem = [[NSMenuItem alloc] initWithTitle:@"Parent" action:@selector(selectMode:) keyEquivalent:@""];
-    self.modeParentMenuItem.target = self;
-    self.modeParentMenuItem.representedObject = @"parent";
-    self.modeChildMenuItem = [[NSMenuItem alloc] initWithTitle:@"Child" action:@selector(selectMode:) keyEquivalent:@""];
-    self.modeChildMenuItem.target = self;
-    self.modeChildMenuItem.representedObject = @"child";
-    [modeSubmenu addItem:self.modeAutoMenuItem];
-    [modeSubmenu addItem:self.modeParentMenuItem];
-    [modeSubmenu addItem:self.modeChildMenuItem];
-    self.parentModeMenuItem.submenu = modeSubmenu;
+    self.syncResetMenuItem = [[NSMenuItem alloc] initWithTitle:@"Sync Reset" action:@selector(toggleSyncReset:) keyEquivalent:@""];
+    self.syncResetMenuItem.target = self;
     self.logWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch UC Logs" action:@selector(toggleLogWatch:) keyEquivalent:@""];
     self.logWatchMenuItem.target = self;
     self.tcpWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch TCP Link" action:@selector(toggleTCPWatch:) keyEquivalent:@""];
@@ -73,9 +60,9 @@
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:resetItem];
     [menu addItem:[NSMenuItem separatorItem]];
-    [menu addItem:self.parentModeMenuItem];
     [menu addItem:self.autoHealMenuItem];
     [menu addItem:self.notificationsMenuItem];
+    [menu addItem:self.syncResetMenuItem];
     [menu addItem:self.logWatchMenuItem];
     [menu addItem:self.tcpWatchMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
@@ -88,7 +75,7 @@
 - (void)resetNow:(id)sender {
     (void)sender;
     [self appendLog:@"manual_reset requested"];
-    [self resetUniversalControl:@"Manual reset" force:YES manual:YES];
+    [self resetUniversalControl:@"Manual reset" force:YES manual:YES broadcast:YES];
 }
 
 - (void)toggleAutoHeal:(id)sender {
@@ -107,26 +94,12 @@
     [self appendLog:[NSString stringWithFormat:@"setting notifications=%@", self.notificationsEnabled ? @"on" : @"off"]];
 }
 
-- (void)selectMode:(id)sender {
-    NSString *requested = nil;
-    if ([sender isKindOfClass:[NSMenuItem class]]) {
-        id represented = [(NSMenuItem *)sender representedObject];
-        if ([represented isKindOfClass:[NSString class]]) {
-            requested = represented;
-        }
-    }
-    if (![@[@"auto", @"parent", @"child"] containsObject:requested]) {
-        return;
-    }
-    if ([requested isEqualToString:self.modePreference]) {
-        return;
-    }
-    self.modePreference = requested;
-    [[NSUserDefaults standardUserDefaults] setObject:self.modePreference forKey:@"ModePreference"];
-    [self updateEffectiveParentRole];
+- (void)toggleSyncReset:(id)sender {
+    (void)sender;
+    self.syncResetEnabled = !self.syncResetEnabled;
+    [[NSUserDefaults standardUserDefaults] setBool:self.syncResetEnabled forKey:@"SyncResetEnabled"];
     [self updateToggleStates];
-    [self sendHeartbeatViaBonjour];
-    [self appendLog:[NSString stringWithFormat:@"setting modePreference=%@ effectiveRole=%@", self.modePreference, [self effectiveRoleLabel]]];
+    [self appendLog:[NSString stringWithFormat:@"setting syncReset=%@", self.syncResetEnabled ? @"on" : @"off"]];
 }
 
 - (void)toggleLogWatch:(id)sender {
@@ -160,10 +133,7 @@
 - (void)updateToggleStates {
     self.autoHealMenuItem.state = self.autoHealEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.notificationsMenuItem.state = self.notificationsEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.parentModeMenuItem.title = [NSString stringWithFormat:@"Mode: %@ (%@)", [self modePreferenceLabel], [self effectiveRoleLabel]];
-    self.modeAutoMenuItem.state = [self.modePreference isEqualToString:@"auto"] ? NSControlStateValueOn : NSControlStateValueOff;
-    self.modeParentMenuItem.state = [self.modePreference isEqualToString:@"parent"] ? NSControlStateValueOn : NSControlStateValueOff;
-    self.modeChildMenuItem.state = [self.modePreference isEqualToString:@"child"] ? NSControlStateValueOn : NSControlStateValueOff;
+    self.syncResetMenuItem.state = self.syncResetEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.logWatchMenuItem.state = self.logWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.tcpWatchMenuItem.state = self.tcpWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
 }

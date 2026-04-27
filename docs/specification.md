@@ -2,14 +2,14 @@
 
 ## Summary
 
-UplinC is a macOS menu bar watchdog for Universal Control. It monitors the local Universal Control process, local TCP connections owned by Universal Control, related Unified Log events, and peer-to-peer UplinC heartbeats. When a strong local failure signal is detected, the elected Parent instance restarts the local Universal Control related services.
+UplinC is a macOS menu bar watchdog for Universal Control. It monitors the local Universal Control process, local TCP connections owned by Universal Control, related Unified Log events, and peer-to-peer UplinC heartbeats. When a strong local failure signal is detected, any instance with Auto Heal enabled restarts the local Universal Control related services.
 
 UplinC does not use private Universal Control APIs. Recovery is heuristic and local.
 
 ## Goals
 
 - Detect Universal Control stalls and disconnects faster than manual troubleshooting.
-- Avoid reset loops when UplinC runs on both Macs.
+- Coordinate restart timing across paired Macs so both sides recover together through the Sync Reset protocol.
 - Surface peer and heartbeat information for diagnosis.
 - Keep the implementation small, local, and easy to inspect.
 - Preserve manual control through a menu bar reset command.
@@ -59,43 +59,17 @@ Exit statuses are written to the diagnostic log.
 - `Open Log File`.
 - `Reset Universal Control`.
 - `Auto Heal`.
-- `Mode: Auto/Parent/Child`.
+- `Notifications`.
+- `Sync Reset`.
 - `Watch UC Logs`.
 - `Watch TCP Link`.
 - `Quit`.
-
-## Modes
-
-UplinC has a mode preference and an effective role.
-
-Mode preferences:
-
-- `Auto`
-- `Parent`
-- `Child`
-
-Effective roles:
-
-- `Parent`
-- `Child`
-
-Rules:
-
-- Explicit `Parent` always becomes effective Parent.
-- Explicit `Child` always becomes effective Child.
-- In `Auto`, if any recent heartbeat peer advertises explicit `Parent`, this instance becomes Child.
-- If all recent heartbeat peers are `Auto`, the lowest stable instance ID becomes Parent.
-- If no peer is visible, an `Auto` instance treats itself as Parent.
-
-Only an effective Parent can perform automatic resets. Child instances still monitor, log, display peer state, send heartbeat packets, and respond to heartbeat packets.
-
-Manual reset always runs on the local machine.
 
 ## Identity
 
 Each UplinC instance has a stable UUID stored in `NSUserDefaults` under `InstanceID`.
 
-The mode preference is stored in `NSUserDefaults` under `ModePreference`.
+Auto Heal, Notifications, and Sync Reset preferences are stored in `NSUserDefaults`.
 
 ## Heartbeat Protocol
 
@@ -106,23 +80,19 @@ Heartbeat packets are sent every 5 seconds to peer IPv6 addresses observed from 
 Payload format:
 
 ```text
-UPLINC 1 id=<uuid> host=<host> mode=<auto|parent|child> effective=<parent|child> time=<unix_epoch_seconds>
+UPLINC 2 id=<uuid> host=<host> time=<unix_epoch_seconds>
 ```
 
 Fields:
 
 - `id`: stable UplinC instance UUID.
 - `host`: sanitized local host name.
-- `mode`: configured mode preference.
-- `effective`: current effective role.
 - `time`: sender timestamp.
 
 Received heartbeats update the peer table with:
 
 - peer ID
 - host
-- mode preference
-- effective role
 - sender address
 - last seen time
 
@@ -134,9 +104,33 @@ The peer summary includes:
 
 - Universal Control peer addresses discovered from local TCP ownership.
 - UplinC heartbeat peers discovered from UDP heartbeat packets.
-- Per-peer host, mode preference, effective role, compact address, and heartbeat age.
+- Per-peer host, compact address, and heartbeat age.
 
 The menu display is compact and truncated for readability. The diagnostic log records the full peer summary.
+
+## Sync Reset Protocol
+
+When Sync Reset is enabled, manual resets and Auto Heal resets broadcast a reset command to UplinC peers whose addresses have previously been observed as Universal Control TCP peers. This limits reset coordination to paired Macs instead of every UplinC instance on the LAN.
+
+Reset command payload format:
+
+```text
+UPLINCRST 1 id=<sender_uuid> host=<host> nonce=<uuid> reason=<single_token> time=<unix_epoch_seconds>
+```
+
+Reset commands use the same UDP port, Bonjour discovery, and IPv6 socket as heartbeat packets. A sender transmits each logical command three times at 0, 250, and 500 milliseconds with the same nonce. Receivers keep the most recent 64 nonces and drop duplicates.
+
+Incoming reset commands are accepted only when all of these checks pass:
+
+- Sync Reset is enabled locally.
+- `id`, `nonce`, and `time` fields are present.
+- The sender ID is not the local instance ID.
+- The sender address is in `ucPeersEverSeen`.
+- The timestamp is within 10 seconds of the local clock.
+- The nonce has not already been processed.
+- A local reset is not already in progress.
+
+Accepted commands run the same local reset sequence with `force:YES`, `manual:NO`, and `broadcast:NO`. Remote reset handling never rebroadcasts, so reset fan-out is limited to the original sender.
 
 ## TCP Link Detection
 
@@ -195,11 +189,11 @@ Weak reset signal:
 
 - Four failure-looking Unified Log hits within 2 minutes.
 
-Strong reset signals bypass the automatic reset cooldown when the local instance is allowed to auto-heal.
+Strong reset signals bypass the automatic reset cooldown when Auto Heal is enabled.
 
 Weak log-based resets use a 5-minute cooldown.
 
-Manual resets always run.
+Manual resets always run locally and broadcast a Sync Reset command when Sync Reset is enabled.
 
 ## Cooldown
 
@@ -240,12 +234,11 @@ Logged events include:
 
 - app start and stop
 - process state changes
-- mode changes
-- effective role changes
 - TCP connection count changes
 - TCP missing and recovery events
 - heartbeat peer count changes
 - heartbeat sends and receives
+- remote reset broadcasts, receives, and rejects
 - peer summaries
 - Unified Log failure hits
 - reset triggers
@@ -338,14 +331,15 @@ dist/                                 Ignored release archives
 
 - macOS does not expose a public Universal Control health API.
 - Peer-specific repair is not available; recovery restarts local services.
-- Heartbeat packets may be blocked by firewall settings.
+- Heartbeat and Sync Reset packets may be blocked by firewall settings.
 - Heartbeat routing follows observed Universal Control peer addresses, but it is not guaranteed to use the exact same internal Apple protocol path.
 - Multiple Universal Control peers can be displayed, but reset is still local and affects the local Universal Control service as a whole.
+- Sync Reset depends on `ucPeersEverSeen`; immediately after app launch it may not broadcast until a Universal Control TCP peer has been observed.
 
 ## Future Improvements
 
 - Add per-peer stale state in the menu instead of a single compact summary.
-- Add a preference window for mode, heartbeat port, and cooldown tuning.
+- Add a preference window for heartbeat port, Sync Reset, and cooldown tuning.
 - Persist recent peer history across app restarts.
 - Export diagnostics as a bundle for issue reports.
 - Add notarized app packaging once distribution is needed.

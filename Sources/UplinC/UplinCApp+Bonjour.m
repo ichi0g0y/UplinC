@@ -142,7 +142,7 @@
     }
 
     NSString *host = [self sanitizedToken:([[NSHost currentHost] localizedName] ?: [[NSHost currentHost] name] ?: @"unknown")];
-    NSString *payloadString = [NSString stringWithFormat:@"UPLINC 1 id=%@ host=%@ mode=%@ effective=%@ time=%.0f", self.instanceID, host, self.modePreference, self.parentModeEnabled ? @"parent" : @"child", [[NSDate date] timeIntervalSince1970]];
+    NSString *payloadString = [NSString stringWithFormat:@"UPLINC 2 id=%@ host=%@ time=%.0f", self.instanceID, host, [[NSDate date] timeIntervalSince1970]];
     NSData *payloadData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
 
     NSInteger sentCount = 0;
@@ -187,29 +187,24 @@
 
         buffer[received] = '\0';
         NSString *payload = [NSString stringWithUTF8String:buffer] ?: @"";
+        NSString *senderAddressString = [self canonicalizedAddressFromSockaddr:(struct sockaddr *)&sender];
+        if (senderAddressString.length == 0) {
+            senderAddressString = @"unknown";
+        }
+
+        if ([payload hasPrefix:@"UPLINCRST "]) {
+            NSDictionary<NSString *, NSString *> *resetFields = [self heartbeatFieldsFromPayload:payload];
+            NSString *peerHost = resetFields[@"host"] ?: senderAddressString;
+            [self handleRemoteResetPayload:payload fromAddress:senderAddressString senderHost:peerHost];
+            continue;
+        }
         if (![payload hasPrefix:@"UPLINC "]) {
             continue;
         }
 
-        struct in6_addr canonicalAddr = sender.sin6_addr;
-        uint32_t canonicalScope = sender.sin6_scope_id;
-        if (IN6_IS_ADDR_LINKLOCAL(&canonicalAddr)) {
-            uint16_t embedded = (uint16_t)((canonicalAddr.s6_addr[2] << 8) | canonicalAddr.s6_addr[3]);
-            if (embedded != 0 && canonicalScope == 0) {
-                canonicalScope = embedded;
-            }
-            canonicalAddr.s6_addr[2] = 0;
-            canonicalAddr.s6_addr[3] = 0;
-        }
-        NSString *senderAddressString = [self formatIPv6Address:&canonicalAddr scopeID:canonicalScope];
-        if (senderAddressString.length == 0) {
-            senderAddressString = @"unknown";
-        }
         NSDictionary<NSString *, NSString *> *fields = [self heartbeatFieldsFromPayload:payload];
         NSString *peerID = fields[@"id"] ?: senderAddressString;
         NSString *peerHost = fields[@"host"] ?: senderAddressString;
-        NSString *peerMode = fields[@"mode"] ?: @"unknown";
-        NSString *peerEffective = fields[@"effective"] ?: @"unknown";
 
         NSMutableDictionary<NSString *, id> *peer = self.heartbeatPeers[peerID];
         if (peer == nil) {
@@ -218,15 +213,13 @@
         }
         peer[@"id"] = peerID;
         peer[@"host"] = peerHost;
-        peer[@"mode"] = peerMode;
-        peer[@"effective"] = peerEffective;
         peer[@"address"] = senderAddressString;
         peer[@"lastSeen"] = [NSDate date];
 
         self.heartbeatPeerHasBeenSeen = YES;
         self.lastHeartbeatReceivedAt = [NSDate date];
         self.missedHeartbeatChecks = 0;
-        [self appendLog:[NSString stringWithFormat:@"heartbeat_received from=%@ id=%@ host=%@ mode=%@ effective=%@ payload=\"%@\"", senderAddressString, peerID, peerHost, peerMode, peerEffective, [self sanitizedSingleLine:payload maxLength:160]]];
+        [self appendLog:[NSString stringWithFormat:@"heartbeat_received from=%@ id=%@ host=%@ payload=\"%@\"", senderAddressString, peerID, peerHost, [self sanitizedSingleLine:payload maxLength:160]]];
     }
 }
 
