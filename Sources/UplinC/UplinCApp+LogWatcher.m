@@ -80,6 +80,16 @@
     }
 
     NSDate *now = [NSDate date];
+    BOOL inGrace = [self isInResetGrace] || [self isInPostWakeGrace];
+    if (inGrace) {
+        [self.failureLogTimestamps removeAllObjects];
+        self.lastFailureLogAt = now;
+        self.failureLogHits = 0;
+        self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
+        [self appendLog:[NSString stringWithFormat:@"failure_log ignored=grace line=\"%@\"", [self sanitizedSingleLine:text maxLength:500]]];
+        return;
+    }
+
     while (self.failureLogTimestamps.count > 0) {
         NSDate *oldest = self.failureLogTimestamps.firstObject;
         if ([now timeIntervalSinceDate:oldest] > 120.0) {
@@ -93,8 +103,7 @@
     self.failureLogHits = (NSInteger)self.failureLogTimestamps.count;
     self.logStatusMenuItem.title = [NSString stringWithFormat:@"Log watch: running, failures %ld/4", (long)self.failureLogHits];
     [self appendLog:[NSString stringWithFormat:@"failure_log hit=%ld/4 line=\"%@\"", (long)self.failureLogHits, [self sanitizedSingleLine:text maxLength:500]]];
-    BOOL inGrace = [self isInResetGrace] || [self isInPostWakeGrace];
-    if ([self canAutoReset] && !inGrace && self.failureLogHits >= 4) {
+    if ([self canAutoReset] && self.failureLogHits >= 4) {
         [self.failureLogTimestamps removeAllObjects];
         self.failureLogHits = 0;
         self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
