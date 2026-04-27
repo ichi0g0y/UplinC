@@ -79,9 +79,16 @@
 - (void)updatePeerStatusWithUCPeerAddresses:(NSArray<NSString *> *)ucPeerAddresses {
     NSArray<NSDictionary<NSString *, id> *> *peers = [self recentHeartbeatPeers];
     NSMutableArray<NSString *> *compactUCAddresses = [[NSMutableArray alloc] init];
+    NSMutableSet<NSNumber *> *currentUCScopes = [[NSMutableSet alloc] init];
     for (NSString *address in ucPeerAddresses) {
         [compactUCAddresses addObject:[self compactAddress:address]];
+        struct in6_addr parsedAddr;
+        uint32_t parsedScope = 0;
+        if ([self parseIPv6Address:address into:&parsedAddr scopeID:&parsedScope] && parsedScope > 0) {
+            [currentUCScopes addObject:@(parsedScope)];
+        }
     }
+    [self.ucInterfaceScopes setSet:currentUCScopes];
     NSString *ucSummary = compactUCAddresses.count > 0 ? [compactUCAddresses componentsJoinedByString:@","] : @"none";
     NSString *summary = nil;
     NSString *fullSummary = nil;
@@ -138,6 +145,16 @@
         }
     }
 
+    NSMutableArray<NSString *> *ucIfaceNames = [[NSMutableArray alloc] init];
+    NSArray<NSNumber *> *ucScopeKeys = [self.ucInterfaceScopes.allObjects sortedArrayUsingSelector:@selector(compare:)];
+    for (NSNumber *scopeKey in ucScopeKeys) {
+        char ifname[IF_NAMESIZE];
+        if (if_indextoname(scopeKey.unsignedIntValue, ifname) != NULL) {
+            [ucIfaceNames addObject:[NSString stringWithUTF8String:ifname]];
+        }
+    }
+    NSString *ucIface = ucIfaceNames.count > 0 ? [ucIfaceNames componentsJoinedByString:@","] : nil;
+
     NSArray<NSDictionary<NSString *, id> *> *ordered = [online arrayByAddingObjectsFromArray:offline];
     for (NSDictionary<NSString *, id> *peer in ordered) {
         NSString *host = peer[@"host"];
@@ -154,36 +171,45 @@
         NSString *ageText = [self formatPeerAge:age];
 
         NSDictionary<NSNumber *, NSDate *> *scopes = peer[@"scopesLastSeen"];
-        NSMutableArray<NSString *> *ifaceNames = [[NSMutableArray alloc] init];
+        NSMutableArray<NSString *> *hbIfaceNames = [[NSMutableArray alloc] init];
         if ([scopes isKindOfClass:[NSDictionary class]]) {
             NSArray<NSNumber *> *scopeKeys = [scopes.allKeys sortedArrayUsingSelector:@selector(compare:)];
-            BOOL online = age <= 10.0;
+            BOOL peerOnline = age <= 10.0;
             for (NSNumber *scopeKey in scopeKeys) {
                 NSDate *scopeLastSeen = scopes[scopeKey];
                 if (![scopeLastSeen isKindOfClass:[NSDate class]]) {
                     continue;
                 }
-                if (online && [now timeIntervalSinceDate:scopeLastSeen] > 15.0) {
+                if (peerOnline && [now timeIntervalSinceDate:scopeLastSeen] > 15.0) {
                     continue;
                 }
                 char ifname[IF_NAMESIZE];
                 if (if_indextoname(scopeKey.unsignedIntValue, ifname) != NULL) {
-                    [ifaceNames addObject:[NSString stringWithUTF8String:ifname]];
+                    [hbIfaceNames addObject:[NSString stringWithUTF8String:ifname]];
                 }
             }
         }
-        NSString *iface = ifaceNames.count > 0 ? [ifaceNames componentsJoinedByString:@","] : nil;
+        NSString *hbIface = hbIfaceNames.count > 0 ? [hbIfaceNames componentsJoinedByString:@","] : nil;
+
+        NSMutableArray<NSString *> *tagParts = [[NSMutableArray alloc] init];
+        if (ucIface.length > 0) {
+            [tagParts addObject:[NSString stringWithFormat:@"uc:%@", ucIface]];
+        }
+        if (hbIface.length > 0) {
+            [tagParts addObject:[NSString stringWithFormat:@"hb:%@", hbIface]];
+        }
+        NSString *ifaceTag = [tagParts componentsJoinedByString:@" "];
 
         NSString *title;
         if (age > 10.0) {
-            if (iface.length > 0) {
-                title = [NSString stringWithFormat:@"%@ [Offline] via %@ last seen %@", host, iface, ageText];
+            if (ifaceTag.length > 0) {
+                title = [NSString stringWithFormat:@"%@ [Offline] %@ last seen %@", host, ifaceTag, ageText];
             } else {
                 title = [NSString stringWithFormat:@"%@ [Offline] last seen %@", host, ageText];
             }
         } else {
-            if (iface.length > 0) {
-                title = [NSString stringWithFormat:@"%@ via %@ %@", host, iface, ageText];
+            if (ifaceTag.length > 0) {
+                title = [NSString stringWithFormat:@"%@ %@ %@", host, ifaceTag, ageText];
             } else {
                 title = [NSString stringWithFormat:@"%@ %@", host, ageText];
             }
