@@ -43,6 +43,7 @@ extern const int UplinCHeartbeatPort;
 @property NSString *lastLoggedPeerSummary;
 @property NSInteger missedHeartbeatChecks;
 @property NSMutableSet<NSString *> *ucPeersEverSeen;
+@property NSMutableSet<NSNumber *> *ucInterfaceScopes;
 @property NSMutableOrderedSet<NSString *> *recentRemoteResetNonces;
 @property NSNetService *bonjourService;
 @property NSNetServiceBrowser *bonjourBrowser;
