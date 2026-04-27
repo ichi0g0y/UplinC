@@ -1,9 +1,51 @@
 #import "UplinCApp.h"
 
+static const NSTimeInterval kHeartbeatStaleSeconds = 15.0;
+static const NSInteger kHeartbeatTriggerMisses = 6;
+static const NSInteger kTCPMissesUntilReset = 12;
+static const NSTimeInterval kPostResetGraceSeconds = 60.0;
+static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
+
 @implementation UplinCApp (Health)
 
 - (void)startHealthTimer {
     self.healthTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(checkHealth) userInfo:nil repeats:YES];
+}
+
+- (BOOL)isInResetGrace {
+    if (self.resetGraceUntil == nil) {
+        return NO;
+    }
+    return [[NSDate date] timeIntervalSinceDate:self.resetGraceUntil] < 0.0;
+}
+
+- (BOOL)isInPostWakeGrace {
+    if (self.wakeAt == nil) {
+        return NO;
+    }
+    return [[NSDate date] timeIntervalSinceDate:self.wakeAt] < kPostWakeGraceSeconds;
+}
+
+- (void)clearTransientHealthCounters {
+    self.failureLogHits = 0;
+    [self.failureLogTimestamps removeAllObjects];
+    self.missedTCPChecks = 0;
+    self.missedHeartbeatChecks = 0;
+    self.tcpLinkHasBeenSeen = NO;
+    self.heartbeatPeerHasBeenSeen = NO;
+    self.logStatusMenuItem.title = self.logTask != nil ? @"Log watch: running, failures 0/4" : self.logStatusMenuItem.title;
+}
+
+- (void)handleSystemDidWake:(NSNotification *)note {
+    (void)note;
+    self.wakeAt = [NSDate date];
+    [self clearTransientHealthCounters];
+    [self appendLog:[NSString stringWithFormat:@"system_wake graceSeconds=%.0f", kPostWakeGraceSeconds]];
+}
+
+- (void)handleSystemWillSleep:(NSNotification *)note {
+    (void)note;
+    [self appendLog:@"system_sleep"];
 }
 
 - (void)startHeartbeatTimer {
@@ -31,7 +73,8 @@
               description:(running ? @"Universal Control OK" : @"Universal Control missing")];
     }
 
-    if ([self canAutoReset] && !running) {
+    BOOL inGrace = [self isInResetGrace] || [self isInPostWakeGrace];
+    if ([self canAutoReset] && !running && !inGrace) {
         [self appendLog:@"trigger process_missing reason=UniversalControl"];
         [self resetUniversalControl:@"UniversalControl process was missing" force:YES manual:NO broadcast:YES];
     }
@@ -53,28 +96,29 @@
         self.lastLoggedRapportLinkLocalCount = rapportLinkLocalCount;
     }
 
+    BOOL inGrace = [self isInResetGrace] || [self isInPostWakeGrace];
     if (ucConnectionCount > 0) {
         if (self.missedTCPChecks > 0) {
             [self appendLog:[NSString stringWithFormat:@"tcp_recovered previousMisses=%ld ucConnections=%ld", (long)self.missedTCPChecks, (long)ucConnectionCount]];
         }
         self.tcpLinkHasBeenSeen = YES;
         self.missedTCPChecks = 0;
-    } else if (self.tcpLinkHasBeenSeen) {
+    } else if (self.tcpLinkHasBeenSeen && !inGrace) {
         self.missedTCPChecks += 1;
-        [self appendLog:[NSString stringWithFormat:@"tcp_missing miss=%ld/12", (long)self.missedTCPChecks]];
+        [self appendLog:[NSString stringWithFormat:@"tcp_missing miss=%ld/%ld", (long)self.missedTCPChecks, (long)kTCPMissesUntilReset]];
     }
 
     NSString *ucState = self.tcpLinkHasBeenSeen ? [NSString stringWithFormat:@"UC %ld", (long)ucConnectionCount] : @"UC unseen";
     if (self.tcpLinkHasBeenSeen && ucConnectionCount == 0) {
-        ucState = [NSString stringWithFormat:@"UC miss %ld/12", (long)self.missedTCPChecks];
+        ucState = [NSString stringWithFormat:@"UC miss %ld/%ld", (long)self.missedTCPChecks, (long)kTCPMissesUntilReset];
     }
     self.tcpStatusMenuItem.title = [NSString stringWithFormat:@"TCP link: %@, rapportd LL %ld", ucState, (long)rapportLinkLocalCount];
 
-    if ([self canAutoReset] && self.tcpLinkHasBeenSeen && self.missedTCPChecks >= 12) {
+    if ([self canAutoReset] && !inGrace && self.tcpLinkHasBeenSeen && self.missedTCPChecks >= kTCPMissesUntilReset) {
         self.missedTCPChecks = 0;
         self.tcpLinkHasBeenSeen = NO;
         self.tcpStatusMenuItem.title = @"TCP link: reset triggered";
-        [self appendLog:@"trigger tcp_missing misses=12 durationSeconds=60"];
+        [self appendLog:[NSString stringWithFormat:@"trigger tcp_missing misses=%ld durationSeconds=%ld", (long)kTCPMissesUntilReset, (long)(kTCPMissesUntilReset * 5)]];
         [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES manual:NO broadcast:YES];
     } else if (!self.resetInProgress && self.tcpLinkHasBeenSeen && self.missedTCPChecks > 0) {
         [self setStatusIcon:@"exclamationmark.triangle" fallbackTitle:@"UC!" description:@"Universal Control TCP links missing"];
@@ -94,6 +138,7 @@
     NSDate *now = [NSDate date];
     NSArray<NSDictionary<NSString *, id> *> *recent = [self recentHeartbeatPeers];
 
+    BOOL inGrace = [self isInResetGrace] || [self isInPostWakeGrace];
     NSString *freshestHost = nil;
     NSTimeInterval freshestAge = -1.0;
     NSInteger freshCount = 0;
@@ -103,7 +148,7 @@
             continue;
         }
         NSTimeInterval age = [now timeIntervalSinceDate:lastSeen];
-        if (age > 15.0) {
+        if (age > kHeartbeatStaleSeconds) {
             continue;
         }
         freshCount += 1;
@@ -114,9 +159,9 @@
     }
 
     NSTimeInterval globalAge = [[NSDate date] timeIntervalSinceDate:self.lastHeartbeatReceivedAt];
-    if (self.heartbeatPeerHasBeenSeen && globalAge > 15.0) {
+    if (self.heartbeatPeerHasBeenSeen && globalAge > kHeartbeatStaleSeconds && !inGrace) {
         self.missedHeartbeatChecks += 1;
-    } else if (self.heartbeatPeerHasBeenSeen) {
+    } else if (self.heartbeatPeerHasBeenSeen && globalAge <= kHeartbeatStaleSeconds) {
         self.missedHeartbeatChecks = 0;
     }
 
@@ -139,9 +184,9 @@
 
     [self updatePeerStatusWithUCPeerAddresses:peerAddresses];
 
-    if ([self canAutoReset] && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= 6 && self.ucPeersEverSeen.count > 0 && peerAddresses.count == 0) {
+    if ([self canAutoReset] && !inGrace && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= kHeartbeatTriggerMisses && self.ucPeersEverSeen.count > 0 && peerAddresses.count == 0) {
         self.missedHeartbeatChecks = 0;
-        [self appendLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=6 tcpAlsoMissing=yes ucPeersEverSeen=%lu", (unsigned long)self.ucPeersEverSeen.count]];
+        [self appendLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=%ld tcpAlsoMissing=yes ucPeersEverSeen=%lu", (long)kHeartbeatTriggerMisses, (unsigned long)self.ucPeersEverSeen.count]];
         [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES manual:NO broadcast:YES];
     }
 }
@@ -180,8 +225,10 @@
             self.lastResetMenuItem.title = [NSString stringWithFormat:@"Last reset: %@", [formatter stringFromDate:[NSDate date]]];
             self.statusMenuItem.title = @"Reset complete";
             self.resetInProgress = NO;
+            self.resetGraceUntil = [NSDate dateWithTimeIntervalSinceNow:kPostResetGraceSeconds];
+            [self clearTransientHealthCounters];
             [self setStatusIcon:@"link" fallbackTitle:@"UC" description:@"Universal Control OK"];
-            [self appendLog:[NSString stringWithFormat:@"reset_complete reason=\"%@\"", reason]];
+            [self appendLog:[NSString stringWithFormat:@"reset_complete reason=\"%@\" graceSeconds=%.0f", reason, kPostResetGraceSeconds]];
             [self notifyResetComplete:reason manual:manual];
         });
     });
