@@ -67,11 +67,13 @@ brew tap ichi0g0y/tap
 brew install --cask uplinc
 ```
 
-Homebrew installs UplinC as an app only. To start it at login, use the LaunchAgent install step from a source checkout.
+Homebrew installs UplinC as an app only. To start it at login, toggle `Launch at Login` in the menu, or use the LaunchAgent install step from a source checkout.
 
 ## Start At Login
 
-Install the LaunchAgent:
+Open the menu and toggle `Launch at Login`. UplinC registers itself as a Login Item via `SMAppService` (macOS 13+); state is reflected in System Settings → General → Login Items, and toggling there is honored by the menu.
+
+For source checkouts, a LaunchAgent is also available as an alternative:
 
 ```sh
 make install
