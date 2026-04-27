@@ -189,7 +189,7 @@ Strong reset signals:
 
 Weak reset signal:
 
-- Four failure-looking Unified Log hits within 2 minutes.
+- Four failure-looking Unified Log hits within a sliding 2-minute window. Hits older than 120 seconds are dropped before each evaluation, so spaced-out failures spanning more than 2 minutes do not accumulate to the trigger threshold.
 
 Strong reset signals bypass the automatic reset cooldown when Auto Heal is enabled.
 
@@ -202,6 +202,15 @@ Manual resets always run locally and broadcast a Sync Reset command when Sync Re
 The automatic cooldown is 300 seconds.
 
 It applies only to weak log-based resets. Suppressed resets are logged with the reason and elapsed seconds since the previous reset.
+
+## Grace Periods
+
+Two short suppression windows prevent cascading or spurious resets:
+
+- **Post-reset grace:** 60 seconds after a completed reset, all auto-reset triggers are suppressed and the transient counters (`failureLogTimestamps`, `missedTCPChecks`, `missedHeartbeatChecks`, `tcpLinkHasBeenSeen`, `heartbeatPeerHasBeenSeen`) are cleared. This avoids reset loops driven by post-`killall` failure logs or by the brief gap before `UniversalControl` restarts.
+- **Post-wake grace:** 90 seconds after `NSWorkspaceDidWakeNotification`, the same suppression and counter clear apply. The macOS network stack typically takes a few seconds to a few tens of seconds to resume after wake; observed `lsof` and heartbeat gaps during that window are no longer treated as failures.
+
+Status menu items continue to update during grace; only the auto-reset triggers are gated.
 
 ## Notifications
 
