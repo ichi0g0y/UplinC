@@ -12,7 +12,8 @@ UplinC watches the local Universal Control stack, tracks peer link health, excha
 - TCP link monitoring for established connections owned by `UniversalControl`.
 - Multi-peer display for Universal Control peer addresses and UplinC heartbeat peers.
 - UDP heartbeat every 5 seconds over peer addresses observed from Universal Control TCP links.
-- `Auto`, `Parent`, and `Child` modes to avoid reset loops across two Macs.
+- Auto Heal resets on every instance where it is enabled.
+- Sync Reset broadcasts manual and Auto Heal resets to paired UplinC peers.
 - Unified Log monitoring for repeated Universal Control failure patterns.
 - macOS notifications after resets.
 - Diagnostic log at `~/Library/Logs/UplinC.log`.
@@ -84,17 +85,15 @@ make uninstall
 
 The install script also removes older LaunchAgents from previous names.
 
-## Modes
+## Sync Reset
 
-`Auto` elects exactly one Parent among recent UplinC heartbeat peers. If another peer is explicitly set to `Parent`, an `Auto` peer becomes Child. If all peers are `Auto`, the stable instance ID order decides the Parent.
+When Sync Reset is enabled, manual resets and Auto Heal resets send a reset command to UplinC peers whose addresses were previously observed in Universal Control TCP connections.
 
-`Parent` allows automatic resets when UplinC detects a strong local failure signal.
-
-`Child` continues monitoring, logging, and responding to heartbeat packets, but does not automatically restart services.
+Remote reset commands are nonce-deduped, freshness-checked, limited to known Universal Control peers, and never rebroadcast by the receiver.
 
 ## Reset Signals
 
-Strong signals reset immediately when the local instance is allowed to auto-heal:
+Strong signals reset immediately when Auto Heal is enabled:
 
 - `UniversalControl` process is missing.
 - Universal Control TCP links were previously seen and then disappear for 60 seconds.
@@ -104,7 +103,7 @@ Weak log-based resets use a 5-minute cooldown:
 
 - 4 failure-looking Unified Log hits within 2 minutes.
 
-Manual resets always run.
+Manual resets always run locally and broadcast through Sync Reset when enabled.
 
 ## Diagnostics
 
@@ -114,7 +113,7 @@ Open the log from the menu with `Open Log File`, or tail it directly:
 tail -f ~/Library/Logs/UplinC.log
 ```
 
-The log records process state changes, TCP connection counts, peer summaries, heartbeat sends/receives, reset triggers, cooldown suppression, and command exit statuses. It rotates to `UplinC.log.1` after 1 MB.
+The log records process state changes, TCP connection counts, peer summaries, heartbeat sends/receives, remote reset broadcasts and rejects, reset triggers, cooldown suppression, and command exit statuses. It rotates to `UplinC.log.1` after 1 MB.
 
 ## Documentation
 
