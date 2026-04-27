@@ -192,6 +192,14 @@
             senderAddressString = @"unknown";
         }
 
+        uint32_t senderScopeID = sender.sin6_scope_id;
+        if (IN6_IS_ADDR_LINKLOCAL(&sender.sin6_addr)) {
+            uint16_t embedded = (uint16_t)((sender.sin6_addr.s6_addr[2] << 8) | sender.sin6_addr.s6_addr[3]);
+            if (embedded != 0 && senderScopeID == 0) {
+                senderScopeID = embedded;
+            }
+        }
+
         if ([payload hasPrefix:@"UPLINCRST "]) {
             NSDictionary<NSString *, NSString *> *resetFields = [self heartbeatFieldsFromPayload:payload];
             NSString *peerHost = resetFields[@"host"] ?: senderAddressString;
@@ -215,6 +223,15 @@
         peer[@"host"] = peerHost;
         peer[@"address"] = senderAddressString;
         peer[@"lastSeen"] = [NSDate date];
+
+        if (senderScopeID > 0) {
+            NSMutableDictionary<NSNumber *, NSDate *> *scopes = peer[@"scopesLastSeen"];
+            if (![scopes isKindOfClass:[NSMutableDictionary class]]) {
+                scopes = [[NSMutableDictionary alloc] init];
+                peer[@"scopesLastSeen"] = scopes;
+            }
+            scopes[@(senderScopeID)] = [NSDate date];
+        }
 
         self.heartbeatPeerHasBeenSeen = YES;
         self.lastHeartbeatReceivedAt = [NSDate date];
