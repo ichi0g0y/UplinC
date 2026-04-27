@@ -108,6 +108,8 @@ The peer summary includes:
 
 The menu display is compact and truncated for readability. The diagnostic log records the full peer summary.
 
+The Machines submenu also annotates each row with the resolved interface name (for example `en0`, `en1`, `awdl0`) when the heartbeat arrived over a link-local IPv6 address with a known scope. This is observation only — UplinC cannot force which interface Universal Control uses.
+
 ## Sync Reset Protocol
 
 When Sync Reset is enabled, manual resets and Auto Heal resets broadcast a reset command to UplinC peers whose addresses have previously been observed as Universal Control TCP peers. This limits reset coordination to paired Macs instead of every UplinC instance on the LAN.

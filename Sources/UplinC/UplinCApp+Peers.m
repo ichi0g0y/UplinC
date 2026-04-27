@@ -1,4 +1,5 @@
 #import "UplinCApp.h"
+#include <net/if.h>
 
 @implementation UplinCApp (Peers)
 
@@ -151,11 +152,41 @@
         NSDate *lastSeen = peer[@"lastSeen"];
         NSTimeInterval age = [lastSeen isKindOfClass:[NSDate class]] ? [now timeIntervalSinceDate:lastSeen] : 0;
         NSString *ageText = [self formatPeerAge:age];
+
+        NSDictionary<NSNumber *, NSDate *> *scopes = peer[@"scopesLastSeen"];
+        NSMutableArray<NSString *> *ifaceNames = [[NSMutableArray alloc] init];
+        if ([scopes isKindOfClass:[NSDictionary class]]) {
+            NSArray<NSNumber *> *scopeKeys = [scopes.allKeys sortedArrayUsingSelector:@selector(compare:)];
+            BOOL online = age <= 10.0;
+            for (NSNumber *scopeKey in scopeKeys) {
+                NSDate *scopeLastSeen = scopes[scopeKey];
+                if (![scopeLastSeen isKindOfClass:[NSDate class]]) {
+                    continue;
+                }
+                if (online && [now timeIntervalSinceDate:scopeLastSeen] > 15.0) {
+                    continue;
+                }
+                char ifname[IF_NAMESIZE];
+                if (if_indextoname(scopeKey.unsignedIntValue, ifname) != NULL) {
+                    [ifaceNames addObject:[NSString stringWithUTF8String:ifname]];
+                }
+            }
+        }
+        NSString *iface = ifaceNames.count > 0 ? [ifaceNames componentsJoinedByString:@","] : nil;
+
         NSString *title;
         if (age > 10.0) {
-            title = [NSString stringWithFormat:@"%@ [Offline] last seen %@", host, ageText];
+            if (iface.length > 0) {
+                title = [NSString stringWithFormat:@"%@ [Offline] via %@ last seen %@", host, iface, ageText];
+            } else {
+                title = [NSString stringWithFormat:@"%@ [Offline] last seen %@", host, ageText];
+            }
         } else {
-            title = [NSString stringWithFormat:@"%@ %@", host, ageText];
+            if (iface.length > 0) {
+                title = [NSString stringWithFormat:@"%@ via %@ %@", host, iface, ageText];
+            } else {
+                title = [NSString stringWithFormat:@"%@ %@", host, ageText];
+            }
         }
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
         NSString *address = peer[@"address"];
