@@ -106,8 +106,9 @@
     return [[singleLine substringToIndex:maxLength] stringByAppendingString:@"..."];
 }
 - (void)notifyResetComplete:(NSString *)reason manual:(BOOL)manual {
-    if (!manual && !self.notificationsEnabled) {
-        [self appendLog:@"notification_suppressed reason=auto_reset notifications=off"];
+    (void)manual;
+    if (!self.notificationsEnabled) {
+        [self appendLog:@"notification_suppressed reason=notifications_off"];
         return;
     }
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
