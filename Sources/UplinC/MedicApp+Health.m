@@ -35,7 +35,7 @@
 
     if ([self canAutoReset] && !running) {
         [self appendMedicLog:@"trigger process_missing reason=UniversalControl"];
-        [self resetUniversalControl:@"UniversalControl process was missing" force:YES];
+        [self resetUniversalControl:@"UniversalControl process was missing" force:YES manual:NO];
     }
 
     if (self.tcpWatchEnabled) {
@@ -77,7 +77,7 @@
         self.tcpLinkHasBeenSeen = NO;
         self.tcpStatusMenuItem.title = @"TCP link: reset triggered";
         [self appendMedicLog:@"trigger tcp_missing misses=12 durationSeconds=60"];
-        [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES];
+        [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES manual:NO];
     } else if (!self.resetInProgress && self.tcpLinkHasBeenSeen && self.missedTCPChecks > 0) {
         [self setStatusIcon:@"exclamationmark.triangle" fallbackTitle:@"UC!" description:@"Universal Control TCP links missing"];
     }
@@ -144,11 +144,11 @@
     if ([self canAutoReset] && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= 6 && self.ucPeersEverSeen.count > 0 && peerAddresses.count == 0) {
         self.missedHeartbeatChecks = 0;
         [self appendMedicLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=6 tcpAlsoMissing=yes ucPeersEverSeen=%lu", (unsigned long)self.ucPeersEverSeen.count]];
-        [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES];
+        [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES manual:NO];
     }
 }
 
-- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force {
+- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual {
     NSDate *now = [NSDate date];
     if (!force && [now timeIntervalSinceDate:self.lastResetAttempt] < 300.0) {
         [self appendMedicLog:[NSString stringWithFormat:@"reset_suppressed cooldown reason=\"%@\" secondsSinceLast=%.1f", reason, [now timeIntervalSinceDate:self.lastResetAttempt]]];
@@ -177,7 +177,7 @@
             self.resetInProgress = NO;
             [self setStatusIcon:@"link" fallbackTitle:@"UC" description:@"Universal Control OK"];
             [self appendMedicLog:[NSString stringWithFormat:@"reset_complete reason=\"%@\"", reason]];
-            [self notifyResetComplete:reason];
+            [self notifyResetComplete:reason manual:manual];
         });
     });
 }
