@@ -12,13 +12,11 @@
 
 - (void)heartbeatTick {
     [self drainHeartbeatSocket];
-    [self updateEffectiveParentRole];
     [self sendHeartbeatViaBonjour];
     [self rebuildMachinesSubmenu];
 }
 
 - (void)checkHealth {
-    [self updateEffectiveParentRole];
     BOOL running = [self isProcessRunning:@"UniversalControl"];
     self.statusMenuItem.title = running ? @"UniversalControl: running" : @"UniversalControl: missing";
     self.lastCheckMenuItem.title = [NSString stringWithFormat:@"Last check: %@", [self formattedTime:[NSDate date]]];
@@ -35,7 +33,7 @@
 
     if ([self canAutoReset] && !running) {
         [self appendLog:@"trigger process_missing reason=UniversalControl"];
-        [self resetUniversalControl:@"UniversalControl process was missing" force:YES manual:NO];
+        [self resetUniversalControl:@"UniversalControl process was missing" force:YES manual:NO broadcast:YES];
     }
 
     if (self.tcpWatchEnabled) {
@@ -77,7 +75,7 @@
         self.tcpLinkHasBeenSeen = NO;
         self.tcpStatusMenuItem.title = @"TCP link: reset triggered";
         [self appendLog:@"trigger tcp_missing misses=12 durationSeconds=60"];
-        [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES manual:NO];
+        [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES manual:NO broadcast:YES];
     } else if (!self.resetInProgress && self.tcpLinkHasBeenSeen && self.missedTCPChecks > 0) {
         [self setStatusIcon:@"exclamationmark.triangle" fallbackTitle:@"UC!" description:@"Universal Control TCP links missing"];
     }
@@ -144,15 +142,22 @@
     if ([self canAutoReset] && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= 6 && self.ucPeersEverSeen.count > 0 && peerAddresses.count == 0) {
         self.missedHeartbeatChecks = 0;
         [self appendLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=6 tcpAlsoMissing=yes ucPeersEverSeen=%lu", (unsigned long)self.ucPeersEverSeen.count]];
-        [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES manual:NO];
+        [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES manual:NO broadcast:YES];
     }
 }
 
-- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual {
+- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual broadcast:(BOOL)broadcast {
     NSDate *now = [NSDate date];
     if (!force && [now timeIntervalSinceDate:self.lastResetAttempt] < 300.0) {
         [self appendLog:[NSString stringWithFormat:@"reset_suppressed cooldown reason=\"%@\" secondsSinceLast=%.1f", reason, [now timeIntervalSinceDate:self.lastResetAttempt]]];
         return;
+    }
+    if (self.resetInProgress) {
+        [self appendLog:[NSString stringWithFormat:@"reset_suppressed in_progress reason=\"%@\"", reason]];
+        return;
+    }
+    if (broadcast) {
+        [self sendResetCommandViaBonjour:reason];
     }
     self.lastResetAttempt = now;
     self.resetInProgress = YES;

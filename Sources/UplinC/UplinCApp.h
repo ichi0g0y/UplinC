@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <UserNotifications/UserNotifications.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 
 extern const int UplinCHeartbeatPort;
 
@@ -18,10 +19,7 @@ extern const int UplinCHeartbeatPort;
 @property NSMenuItem *logFileMenuItem;
 @property NSMenuItem *autoHealMenuItem;
 @property NSMenuItem *notificationsMenuItem;
-@property NSMenuItem *parentModeMenuItem;
-@property NSMenuItem *modeAutoMenuItem;
-@property NSMenuItem *modeParentMenuItem;
-@property NSMenuItem *modeChildMenuItem;
+@property NSMenuItem *syncResetMenuItem;
 @property NSMenuItem *logWatchMenuItem;
 @property NSMenuItem *tcpWatchMenuItem;
 @property NSTimer *healthTimer;
@@ -29,13 +27,12 @@ extern const int UplinCHeartbeatPort;
 @property NSTask *logTask;
 @property BOOL autoHealEnabled;
 @property BOOL notificationsEnabled;
-@property BOOL parentModeEnabled;
+@property BOOL syncResetEnabled;
 @property BOOL logWatchEnabled;
 @property BOOL tcpWatchEnabled;
 @property BOOL heartbeatPeerHasBeenSeen;
 @property BOOL tcpLinkHasBeenSeen;
 @property BOOL resetInProgress;
-@property NSString *modePreference;
 @property NSString *instanceID;
 @property NSMutableDictionary<NSString *, NSMutableDictionary<NSString *, id> *> *heartbeatPeers;
 @property BOOL lastUniversalControlRunning;
@@ -46,6 +43,7 @@ extern const int UplinCHeartbeatPort;
 @property NSString *lastLoggedPeerSummary;
 @property NSInteger missedHeartbeatChecks;
 @property NSMutableSet<NSString *> *ucPeersEverSeen;
+@property NSMutableOrderedSet<NSString *> *recentRemoteResetNonces;
 @property NSNetService *bonjourService;
 @property NSNetServiceBrowser *bonjourBrowser;
 @property NSMutableDictionary<NSString *, NSNetService *> *bonjourPeers;
@@ -73,20 +71,17 @@ extern const int UplinCHeartbeatPort;
 - (void)resetNow:(id)sender;
 - (void)toggleAutoHeal:(id)sender;
 - (void)toggleNotifications:(id)sender;
-- (void)selectMode:(id)sender;
+- (void)toggleSyncReset:(id)sender;
 - (void)toggleLogWatch:(id)sender;
 - (void)toggleTCPWatch:(id)sender;
 - (void)openLogFile:(id)sender;
 - (void)quit:(id)sender;
 - (void)updateToggleStates;
 - (BOOL)canAutoReset;
-- (void)configureIdentityAndMode;
-- (void)updateEffectiveParentRole;
-- (NSString *)modePreferenceLabel;
-- (NSString *)effectiveRoleLabel;
+- (void)configureIdentity;
 - (void)checkTCPLinkHealth;
 - (void)checkHeartbeatHealth;
-- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual;
+- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual broadcast:(BOOL)broadcast;
 - (void)startHeartbeatSocket;
 - (void)stopHeartbeatSocket;
 - (void)startBonjour;
@@ -99,7 +94,10 @@ extern const int UplinCHeartbeatPort;
 - (void)netServiceBrowser:(NSNetServiceBrowser *)browser didRemoveService:(NSNetService *)service moreComing:(BOOL)moreComing;
 - (void)netServiceBrowser:(NSNetServiceBrowser *)browser didNotSearch:(NSDictionary<NSString *, NSNumber *> *)errorDict;
 - (NSInteger)sendHeartbeatViaBonjour;
+- (void)sendResetCommandViaBonjour:(NSString *)reason;
 - (void)drainHeartbeatSocket;
+- (NSString *)canonicalizedAddressFromSockaddr:(const struct sockaddr *)sa;
+- (void)handleRemoteResetPayload:(NSString *)payload fromAddress:(NSString *)senderAddressString senderHost:(NSString *)senderHost;
 - (NSDictionary<NSString *, NSString *> *)heartbeatFieldsFromPayload:(NSString *)payload;
 - (NSArray<NSDictionary<NSString *, id> *> *)recentHeartbeatPeers;
 - (NSArray<NSDictionary<NSString *, id> *> *)allKnownHeartbeatPeers;

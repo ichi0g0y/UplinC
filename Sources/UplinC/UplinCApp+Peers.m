@@ -94,14 +94,12 @@
         NSDate *now = [NSDate date];
         for (NSDictionary<NSString *, id> *peer in peers) {
             NSString *host = peer[@"host"] ?: @"unknown";
-            NSString *mode = peer[@"mode"] ?: @"?";
-            NSString *effective = peer[@"effective"] ?: @"?";
             NSString *fullAddress = peer[@"address"] ?: @"";
             NSString *address = [self compactAddress:fullAddress];
             NSDate *lastSeen = peer[@"lastSeen"];
             NSTimeInterval age = [lastSeen isKindOfClass:[NSDate class]] ? [now timeIntervalSinceDate:lastSeen] : 0;
-            [parts addObject:[NSString stringWithFormat:@"%@/%@->%@/%@ %.0fs", host, mode, effective, address, age]];
-            [fullParts addObject:[NSString stringWithFormat:@"%@/%@->%@/%@ %.0fs", host, mode, effective, fullAddress, age]];
+            [parts addObject:[NSString stringWithFormat:@"%@/%@ %.0fs", host, address, age]];
+            [fullParts addObject:[NSString stringWithFormat:@"%@/%@ %.0fs", host, fullAddress, age]];
         }
         summary = [NSString stringWithFormat:@"Peers: UC %@ | UplinC %@", ucSummary, [parts componentsJoinedByString:@"; "]];
         fullSummary = [NSString stringWithFormat:@"Peers: UC %@ | UplinC %@", [ucPeerAddresses componentsJoinedByString:@","], [fullParts componentsJoinedByString:@"; "]];
@@ -157,9 +155,7 @@
         if (age > 10.0) {
             title = [NSString stringWithFormat:@"%@ [Offline] last seen %@", host, ageText];
         } else {
-            NSString *mode = peer[@"mode"] ?: @"?";
-            NSString *effective = peer[@"effective"] ?: @"?";
-            title = [NSString stringWithFormat:@"%@ (%@→%@) %@", host, mode, effective, ageText];
+            title = [NSString stringWithFormat:@"%@ %@", host, ageText];
         }
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
         NSString *address = peer[@"address"];
