@@ -1,6 +1,6 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 
-@implementation MedicApp (Menu)
+@implementation UplinCApp (Menu)
 
 - (void)configureMenu {
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
@@ -87,7 +87,7 @@
 
 - (void)resetNow:(id)sender {
     (void)sender;
-    [self appendMedicLog:@"manual_reset requested"];
+    [self appendLog:@"manual_reset requested"];
     [self resetUniversalControl:@"Manual reset" force:YES manual:YES];
 }
 
@@ -96,7 +96,7 @@
     self.autoHealEnabled = !self.autoHealEnabled;
     [[NSUserDefaults standardUserDefaults] setBool:self.autoHealEnabled forKey:@"AutoHealEnabled"];
     [self updateToggleStates];
-    [self appendMedicLog:[NSString stringWithFormat:@"setting autoHeal=%@", self.autoHealEnabled ? @"on" : @"off"]];
+    [self appendLog:[NSString stringWithFormat:@"setting autoHeal=%@", self.autoHealEnabled ? @"on" : @"off"]];
 }
 
 - (void)toggleNotifications:(id)sender {
@@ -104,7 +104,7 @@
     self.notificationsEnabled = !self.notificationsEnabled;
     [[NSUserDefaults standardUserDefaults] setBool:self.notificationsEnabled forKey:@"NotificationsEnabled"];
     [self updateToggleStates];
-    [self appendMedicLog:[NSString stringWithFormat:@"setting notifications=%@", self.notificationsEnabled ? @"on" : @"off"]];
+    [self appendLog:[NSString stringWithFormat:@"setting notifications=%@", self.notificationsEnabled ? @"on" : @"off"]];
 }
 
 - (void)selectMode:(id)sender {
@@ -126,7 +126,7 @@
     [self updateEffectiveParentRole];
     [self updateToggleStates];
     [self sendHeartbeatViaBonjour];
-    [self appendMedicLog:[NSString stringWithFormat:@"setting modePreference=%@ effectiveRole=%@", self.modePreference, [self effectiveRoleLabel]]];
+    [self appendLog:[NSString stringWithFormat:@"setting modePreference=%@ effectiveRole=%@", self.modePreference, [self effectiveRoleLabel]]];
 }
 
 - (void)toggleLogWatch:(id)sender {
@@ -134,7 +134,7 @@
     self.logWatchEnabled = !self.logWatchEnabled;
     [self updateToggleStates];
     self.logWatchEnabled ? [self startLogWatcher] : [self stopLogWatcher];
-    [self appendMedicLog:[NSString stringWithFormat:@"setting logWatch=%@", self.logWatchEnabled ? @"on" : @"off"]];
+    [self appendLog:[NSString stringWithFormat:@"setting logWatch=%@", self.logWatchEnabled ? @"on" : @"off"]];
 }
 
 - (void)toggleTCPWatch:(id)sender {
@@ -142,14 +142,14 @@
     self.tcpWatchEnabled = !self.tcpWatchEnabled;
     [self updateToggleStates];
     self.tcpStatusMenuItem.title = self.tcpWatchEnabled ? @"TCP link: not seen yet" : @"TCP link: stopped";
-    [self appendMedicLog:[NSString stringWithFormat:@"setting tcpWatch=%@", self.tcpWatchEnabled ? @"on" : @"off"]];
+    [self appendLog:[NSString stringWithFormat:@"setting tcpWatch=%@", self.tcpWatchEnabled ? @"on" : @"off"]];
 }
 
 - (void)openLogFile:(id)sender {
     (void)sender;
-    [self ensureMedicLogFileExists];
-    int status = [self run:@"/usr/bin/open" arguments:@[[self medicLogPath]]];
-    [self appendMedicLog:[NSString stringWithFormat:@"log_file opened status=%d", status]];
+    [self ensureLogFileExists];
+    int status = [self run:@"/usr/bin/open" arguments:@[[self logPath]]];
+    [self appendLog:[NSString stringWithFormat:@"log_file opened status=%d", status]];
 }
 
 - (void)quit:(id)sender {

@@ -1,17 +1,17 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-@implementation MedicApp (Bonjour)
+@implementation UplinCApp (Bonjour)
 
 - (void)startHeartbeatSocket {
     self.heartbeatSocket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (self.heartbeatSocket < 0) {
         self.heartbeatStatusMenuItem.title = @"Heartbeat: socket failed";
-        [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_socket failed errno=%d", errno]];
+        [self appendLog:[NSString stringWithFormat:@"heartbeat_socket failed errno=%d", errno]];
         return;
     }
 
@@ -32,7 +32,7 @@
     address.sin6_addr = in6addr_any;
 
     if (bind(self.heartbeatSocket, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_bind failed port=%d errno=%d", UplinCHeartbeatPort, errno]];
+        [self appendLog:[NSString stringWithFormat:@"heartbeat_bind failed port=%d errno=%d", UplinCHeartbeatPort, errno]];
         close(self.heartbeatSocket);
         self.heartbeatSocket = -1;
         self.heartbeatStatusMenuItem.title = @"Heartbeat: bind failed";
@@ -40,14 +40,14 @@
     }
 
     self.heartbeatStatusMenuItem.title = [NSString stringWithFormat:@"Heartbeat: UDP %d", UplinCHeartbeatPort];
-    [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_socket started port=%d", UplinCHeartbeatPort]];
+    [self appendLog:[NSString stringWithFormat:@"heartbeat_socket started port=%d", UplinCHeartbeatPort]];
 }
 
 - (void)stopHeartbeatSocket {
     if (self.heartbeatSocket >= 0) {
         close(self.heartbeatSocket);
         self.heartbeatSocket = -1;
-        [self appendMedicLog:@"heartbeat_socket stopped"];
+        [self appendLog:@"heartbeat_socket stopped"];
     }
 }
 
@@ -66,7 +66,7 @@
     self.bonjourBrowser = [[NSNetServiceBrowser alloc] init];
     self.bonjourBrowser.delegate = self;
     [self.bonjourBrowser searchForServicesOfType:@"_uplinc._udp." inDomain:@"local."];
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_start name=%@", self.instanceID]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_start name=%@", self.instanceID]];
 }
 
 - (void)stopBonjour {
@@ -76,15 +76,15 @@
     self.bonjourBrowser = nil;
     [self.bonjourPeers removeAllObjects];
     [self.bonjourPeerAddresses removeAllObjects];
-    [self appendMedicLog:@"bonjour_stop"];
+    [self appendLog:@"bonjour_stop"];
 }
 
 - (void)netServiceDidPublish:(NSNetService *)sender {
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_published name=%@ port=%ld", sender.name, (long)sender.port]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_published name=%@ port=%ld", sender.name, (long)sender.port]];
 }
 
 - (void)netService:(NSNetService *)sender didNotPublish:(NSDictionary<NSString *, NSNumber *> *)errorDict {
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_publish_failed name=%@ error=%@", sender.name, errorDict[NSNetServicesErrorCode]]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_publish_failed name=%@ error=%@", sender.name, errorDict[NSNetServicesErrorCode]]];
 }
 
 - (void)netServiceDidResolveAddress:(NSNetService *)sender {
@@ -101,11 +101,11 @@
         [kept addObject:data];
     }
     self.bonjourPeerAddresses[sender.name] = kept;
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_resolved name=%@ count=%lu", sender.name, (unsigned long)kept.count]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_resolved name=%@ count=%lu", sender.name, (unsigned long)kept.count]];
 }
 
 - (void)netService:(NSNetService *)sender didNotResolve:(NSDictionary<NSString *, NSNumber *> *)errorDict {
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_resolve_failed name=%@ error=%@", sender.name, errorDict[NSNetServicesErrorCode]]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_resolve_failed name=%@ error=%@", sender.name, errorDict[NSNetServicesErrorCode]]];
 }
 
 - (void)netServiceBrowser:(NSNetServiceBrowser *)browser didFindService:(NSNetService *)service moreComing:(BOOL)moreComing {
@@ -120,7 +120,7 @@
     service.delegate = self;
     self.bonjourPeers[service.name] = service;
     [service resolveWithTimeout:10.0];
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_found name=%@", service.name]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_found name=%@", service.name]];
 }
 
 - (void)netServiceBrowser:(NSNetServiceBrowser *)browser didRemoveService:(NSNetService *)service moreComing:(BOOL)moreComing {
@@ -128,12 +128,12 @@
     (void)moreComing;
     [self.bonjourPeers removeObjectForKey:service.name];
     [self.bonjourPeerAddresses removeObjectForKey:service.name];
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_removed name=%@", service.name]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_removed name=%@", service.name]];
 }
 
 - (void)netServiceBrowser:(NSNetServiceBrowser *)browser didNotSearch:(NSDictionary<NSString *, NSNumber *> *)errorDict {
     (void)browser;
-    [self appendMedicLog:[NSString stringWithFormat:@"bonjour_browse_failed error=%@", errorDict[NSNetServicesErrorCode]]];
+    [self appendLog:[NSString stringWithFormat:@"bonjour_browse_failed error=%@", errorDict[NSNetServicesErrorCode]]];
 }
 
 - (NSInteger)sendHeartbeatViaBonjour {
@@ -162,7 +162,7 @@
             dest.sin6_port = htons(UplinCHeartbeatPort);
             ssize_t sent = sendto(self.heartbeatSocket, payloadData.bytes, payloadData.length, 0, (struct sockaddr *)&dest, sizeof(dest));
             if (sent < 0) {
-                [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_bonjour_send failed peer=%@ errno=%d", peerName, errno]];
+                [self appendLog:[NSString stringWithFormat:@"heartbeat_bonjour_send failed peer=%@ errno=%d", peerName, errno]];
             } else {
                 sentCount += 1;
             }
@@ -226,7 +226,7 @@
         self.heartbeatPeerHasBeenSeen = YES;
         self.lastHeartbeatReceivedAt = [NSDate date];
         self.missedHeartbeatChecks = 0;
-        [self appendMedicLog:[NSString stringWithFormat:@"heartbeat_received from=%@ id=%@ host=%@ mode=%@ effective=%@ payload=\"%@\"", senderAddressString, peerID, peerHost, peerMode, peerEffective, [self sanitizedSingleLine:payload maxLength:160]]];
+        [self appendLog:[NSString stringWithFormat:@"heartbeat_received from=%@ id=%@ host=%@ mode=%@ effective=%@ payload=\"%@\"", senderAddressString, peerID, peerHost, peerMode, peerEffective, [self sanitizedSingleLine:payload maxLength:160]]];
     }
 }
 

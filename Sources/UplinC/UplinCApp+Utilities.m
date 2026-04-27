@@ -1,6 +1,6 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 
-@implementation MedicApp (Utilities)
+@implementation UplinCApp (Utilities)
 
 - (NSString *)compactAddress:(NSString *)address {
     if (address.length <= 18) {
@@ -45,18 +45,18 @@
     formatter.dateStyle = NSDateFormatterNoStyle;
     return [formatter stringFromDate:date];
 }
-- (NSString *)medicLogPath {
+- (NSString *)logPath {
     NSString *logsDirectory = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs"];
     return [logsDirectory stringByAppendingPathComponent:@"UplinC.log"];
 }
-- (void)appendMedicLog:(NSString *)message {
+- (void)appendLog:(NSString *)message {
     @synchronized (self) {
-        NSString *logsDirectory = [[self medicLogPath] stringByDeletingLastPathComponent];
+        NSString *logsDirectory = [[self logPath] stringByDeletingLastPathComponent];
         [[NSFileManager defaultManager] createDirectoryAtPath:logsDirectory withIntermediateDirectories:YES attributes:nil error:nil];
 
         NSString *line = [NSString stringWithFormat:@"%@ %@\n", [self logTimestamp], message];
         NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
-        NSString *path = [self medicLogPath];
+        NSString *path = [self logPath];
 
         if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
             [data writeToFile:path atomically:YES];
@@ -70,18 +70,18 @@
         [handle seekToEndOfFile];
         [handle writeData:data];
         [handle closeFile];
-        [self rotateMedicLogIfNeeded];
+        [self rotateLogIfNeeded];
     }
 }
-- (void)ensureMedicLogFileExists {
-    NSString *logsDirectory = [[self medicLogPath] stringByDeletingLastPathComponent];
+- (void)ensureLogFileExists {
+    NSString *logsDirectory = [[self logPath] stringByDeletingLastPathComponent];
     [[NSFileManager defaultManager] createDirectoryAtPath:logsDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-    if (![[NSFileManager defaultManager] fileExistsAtPath:[self medicLogPath]]) {
-        [@"" writeToFile:[self medicLogPath] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:[self logPath]]) {
+        [@"" writeToFile:[self logPath] atomically:YES encoding:NSUTF8StringEncoding error:nil];
     }
 }
-- (void)rotateMedicLogIfNeeded {
-    NSString *path = [self medicLogPath];
+- (void)rotateLogIfNeeded {
+    NSString *path = [self logPath];
     NSDictionary<NSFileAttributeKey, id> *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
     unsigned long long size = [attributes fileSize];
     if (size < 1024 * 1024) {
@@ -107,7 +107,7 @@
 }
 - (void)notifyResetComplete:(NSString *)reason manual:(BOOL)manual {
     if (!manual && !self.notificationsEnabled) {
-        [self appendMedicLog:@"notification_suppressed reason=auto_reset notifications=off"];
+        [self appendLog:@"notification_suppressed reason=auto_reset notifications=off"];
         return;
     }
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];

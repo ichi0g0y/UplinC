@@ -1,6 +1,6 @@
-#import "MedicApp.h"
+#import "UplinCApp.h"
 
-@implementation MedicApp (Peers)
+@implementation UplinCApp (Peers)
 
 - (NSDictionary<NSString *, NSString *> *)heartbeatFieldsFromPayload:(NSString *)payload {
     NSMutableDictionary<NSString *, NSString *> *fields = [[NSMutableDictionary alloc] init];
@@ -108,7 +108,7 @@
     }
 
     if (![summary isEqualToString:self.lastLoggedPeerSummary]) {
-        [self appendMedicLog:[NSString stringWithFormat:@"peer_summary %@", fullSummary ?: summary]];
+        [self appendLog:[NSString stringWithFormat:@"peer_summary %@", fullSummary ?: summary]];
         self.lastLoggedPeerSummary = summary;
     }
     [self rebuildMachinesSubmenu];
