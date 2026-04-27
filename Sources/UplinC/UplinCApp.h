@@ -54,8 +54,11 @@ extern const int UplinCHeartbeatPort;
 @property NSDate *lastResetAttempt;
 @property NSDate *lastFailureLogAt;
 @property NSDate *lastHeartbeatReceivedAt;
+@property NSDate *resetGraceUntil;
+@property NSDate *wakeAt;
 @property NSInteger failureLogHits;
 @property NSInteger missedTCPChecks;
+@property NSMutableArray<NSDate *> *failureLogTimestamps;
 @end
 
 @interface UplinCApp (Internal)
@@ -85,6 +88,11 @@ extern const int UplinCHeartbeatPort;
 - (void)checkTCPLinkHealth;
 - (void)checkHeartbeatHealth;
 - (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual broadcast:(BOOL)broadcast;
+- (void)handleSystemDidWake:(NSNotification *)note;
+- (void)handleSystemWillSleep:(NSNotification *)note;
+- (BOOL)isInResetGrace;
+- (BOOL)isInPostWakeGrace;
+- (void)clearTransientHealthCounters;
 - (void)startHeartbeatSocket;
 - (void)stopHeartbeatSocket;
 - (void)startBonjour;

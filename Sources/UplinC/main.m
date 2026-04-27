@@ -19,7 +19,14 @@ const int UplinCHeartbeatPort = 54176;
     self.lastResetAttempt = [NSDate distantPast];
     self.lastFailureLogAt = [NSDate distantPast];
     self.lastHeartbeatReceivedAt = [NSDate distantPast];
+    self.resetGraceUntil = [NSDate distantPast];
+    self.wakeAt = [NSDate distantPast];
+    self.failureLogTimestamps = [[NSMutableArray alloc] init];
     [self configureIdentity];
+
+    NSNotificationCenter *workspaceCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
+    [workspaceCenter addObserver:self selector:@selector(handleSystemDidWake:) name:NSWorkspaceDidWakeNotification object:nil];
+    [workspaceCenter addObserver:self selector:@selector(handleSystemWillSleep:) name:NSWorkspaceWillSleepNotification object:nil];
 
     [self configureMenu];
     [self configureNotifications];
@@ -35,6 +42,7 @@ const int UplinCHeartbeatPort = 54176;
 - (void)applicationWillTerminate:(NSNotification *)notification {
     (void)notification;
     [self appendLog:@"app_stop"];
+    [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self];
     [self stopLogWatcher];
     [self stopBonjour];
     [self stopHeartbeatSocket];
