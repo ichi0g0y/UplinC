@@ -21,6 +21,16 @@
         [defaults setObject:storedMode forKey:@"ModePreference"];
     }
     self.modePreference = storedMode;
+
+    if ([defaults objectForKey:@"AutoHealEnabled"] == nil) {
+        [defaults setBool:YES forKey:@"AutoHealEnabled"];
+    }
+    self.autoHealEnabled = [defaults boolForKey:@"AutoHealEnabled"];
+
+    if ([defaults objectForKey:@"NotificationsEnabled"] == nil) {
+        [defaults setBool:YES forKey:@"NotificationsEnabled"];
+    }
+    self.notificationsEnabled = [defaults boolForKey:@"NotificationsEnabled"];
 }
 
 - (void)updateEffectiveParentRole {

@@ -105,7 +105,11 @@
     }
     return [[singleLine substringToIndex:maxLength] stringByAppendingString:@"..."];
 }
-- (void)notifyResetComplete:(NSString *)reason {
+- (void)notifyResetComplete:(NSString *)reason manual:(BOOL)manual {
+    if (!manual && !self.notificationsEnabled) {
+        [self appendMedicLog:@"notification_suppressed reason=auto_reset notifications=off"];
+        return;
+    }
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
     content.title = @"Universal Control restarted";
     content.body = reason;

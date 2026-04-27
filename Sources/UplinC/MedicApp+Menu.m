@@ -36,6 +36,8 @@
 
     self.autoHealMenuItem = [[NSMenuItem alloc] initWithTitle:@"Auto Heal" action:@selector(toggleAutoHeal:) keyEquivalent:@""];
     self.autoHealMenuItem.target = self;
+    self.notificationsMenuItem = [[NSMenuItem alloc] initWithTitle:@"Notifications" action:@selector(toggleNotifications:) keyEquivalent:@""];
+    self.notificationsMenuItem.target = self;
     self.parentModeMenuItem = [[NSMenuItem alloc] initWithTitle:@"Mode: Auto" action:nil keyEquivalent:@""];
     NSMenu *modeSubmenu = [[NSMenu alloc] initWithTitle:@"Mode"];
     self.modeAutoMenuItem = [[NSMenuItem alloc] initWithTitle:@"Auto" action:@selector(selectMode:) keyEquivalent:@""];
@@ -73,6 +75,7 @@
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:self.parentModeMenuItem];
     [menu addItem:self.autoHealMenuItem];
+    [menu addItem:self.notificationsMenuItem];
     [menu addItem:self.logWatchMenuItem];
     [menu addItem:self.tcpWatchMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
@@ -85,14 +88,23 @@
 - (void)resetNow:(id)sender {
     (void)sender;
     [self appendMedicLog:@"manual_reset requested"];
-    [self resetUniversalControl:@"Manual reset" force:YES];
+    [self resetUniversalControl:@"Manual reset" force:YES manual:YES];
 }
 
 - (void)toggleAutoHeal:(id)sender {
     (void)sender;
     self.autoHealEnabled = !self.autoHealEnabled;
+    [[NSUserDefaults standardUserDefaults] setBool:self.autoHealEnabled forKey:@"AutoHealEnabled"];
     [self updateToggleStates];
     [self appendMedicLog:[NSString stringWithFormat:@"setting autoHeal=%@", self.autoHealEnabled ? @"on" : @"off"]];
+}
+
+- (void)toggleNotifications:(id)sender {
+    (void)sender;
+    self.notificationsEnabled = !self.notificationsEnabled;
+    [[NSUserDefaults standardUserDefaults] setBool:self.notificationsEnabled forKey:@"NotificationsEnabled"];
+    [self updateToggleStates];
+    [self appendMedicLog:[NSString stringWithFormat:@"setting notifications=%@", self.notificationsEnabled ? @"on" : @"off"]];
 }
 
 - (void)selectMode:(id)sender {
@@ -147,6 +159,7 @@
 
 - (void)updateToggleStates {
     self.autoHealMenuItem.state = self.autoHealEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    self.notificationsMenuItem.state = self.notificationsEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.parentModeMenuItem.title = [NSString stringWithFormat:@"Mode: %@ (%@)", [self modePreferenceLabel], [self effectiveRoleLabel]];
     self.modeAutoMenuItem.state = [self.modePreference isEqualToString:@"auto"] ? NSControlStateValueOn : NSControlStateValueOff;
     self.modeParentMenuItem.state = [self.modePreference isEqualToString:@"parent"] ? NSControlStateValueOn : NSControlStateValueOff;

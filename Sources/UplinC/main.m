@@ -7,7 +7,6 @@ const int UplinCHeartbeatPort = 54176;
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-    self.autoHealEnabled = YES;
     self.logWatchEnabled = YES;
     self.tcpWatchEnabled = YES;
     self.heartbeatPeers = [[NSMutableDictionary alloc] init];
@@ -25,7 +24,7 @@ const int UplinCHeartbeatPort = 54176;
     [self configureNotifications];
     [self startHeartbeatSocket];
     [self startBonjour];
-    [self appendMedicLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ modePreference=%@ effectiveRole=%@ autoHeal=on logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.modePreference, [self effectiveRoleLabel]]];
+    [self appendMedicLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ modePreference=%@ effectiveRole=%@ autoHeal=%@ notifications=%@ logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.modePreference, [self effectiveRoleLabel], self.autoHealEnabled ? @"on" : @"off", self.notificationsEnabled ? @"on" : @"off"]];
     [self startHealthTimer];
     [self startHeartbeatTimer];
     [self startLogWatcher];
