@@ -61,7 +61,20 @@ extern const int UplinCHeartbeatPort;
 @property NSDate *wakeAt;
 @property NSInteger failureLogHits;
 @property NSInteger missedTCPChecks;
-@property NSMutableArray<NSDate *> *failureLogTimestamps;
+@property NSMutableArray<NSMutableDictionary<NSString *, id> *> *failureLogEvents;
+@property double failureLogScore;
+@property NSMutableDictionary<NSString *, NSDate *> *recentLogMessageHashes;
+@property NSString *lastFailureLogLine;
+@property NSMutableArray<NSNumber *> *diagPgrepSamples;
+@property NSMutableArray<NSNumber *> *diagTCPSamples;
+@property NSMutableArray<NSNumber *> *diagHeartbeatPeerSamples;
+@property NSMenuItem *diagnosticMenuItem;
+@property NSMenu *diagnosticSubmenu;
+@property NSMenuItem *diagPgrepItem;
+@property NSMenuItem *diagTCPItem;
+@property NSMenuItem *diagHeartbeatItem;
+@property NSMenuItem *diagFailureScoreItem;
+@property NSMenuItem *diagRecentLineItem;
 @end
 
 @interface UplinCApp (Internal)
@@ -143,6 +156,9 @@ extern const int UplinCHeartbeatPort;
 - (void)saveUCPeersToDefaults;
 - (void)noteUCPeerSeen:(NSString *)canonicalAddress;
 - (void)pruneStaleHeartbeatPeers;
+- (void)recordDiagnosticTick;
+- (void)rebuildDiagnosticSubmenu;
+- (void)pruneFailureLogWindow;
 - (int)run:(NSString *)executable arguments:(NSArray<NSString *> *)arguments;
 - (NSString *)outputFrom:(NSString *)executable arguments:(NSArray<NSString *> *)arguments;
 @end

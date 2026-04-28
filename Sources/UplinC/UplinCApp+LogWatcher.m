@@ -1,5 +1,77 @@
 #import "UplinCApp.h"
 
+static const double kStrongMarkerWeight = 1.0;
+static const double kWeakMarkerHeavyWeight = 1.0;
+static const double kWeakMarkerLightWeight = 0.5;
+static const NSTimeInterval kDuplicateSuppressionSeconds = 5.0;
+static const NSTimeInterval kFailureLogWindowSeconds = 120.0;
+static const double kFailureLogTriggerScore = 4.0;
+static const NSUInteger kRecentLogHashesPruneAt = 64;
+
+static NSArray<NSString *> *UCStrongMarkers(void) {
+    static NSArray<NSString *> *markers;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        markers = @[
+            @"crashed",
+            @"died",
+            @"panic",
+            @"fatal error",
+            @"assertion failed"
+        ];
+    });
+    return markers;
+}
+
+static NSArray<NSString *> *UCWeakMarkers(void) {
+    static NSArray<NSString *> *markers;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        markers = @[
+            @"disconnected",
+            @"connection interrupted",
+            @"connection failed",
+            @"connection refused",
+            @"connection reset",
+            @"timed out",
+            @"not reachable",
+            @"peer not found",
+            @"device not found",
+            @"receive failed",
+            @"activate failed",
+            @"p2pstream canceled"
+        ];
+    });
+    return markers;
+}
+
+static NSArray<NSString *> *UCSeverityTokens(void) {
+    static NSArray<NSString *> *tokens;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        tokens = @[@"error", @"fail", @"fatal"];
+    });
+    return tokens;
+}
+
+static NSString *UCDupSuppressionKey(NSString *lower) {
+    if (lower.length == 0) {
+        return @"";
+    }
+    static NSRegularExpression *timestampRE;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        timestampRE = [NSRegularExpression regularExpressionWithPattern:@"^\\s*\\d{4}-\\d{2}-\\d{2}[ t]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:[+-]\\d{4})?\\s+"
+                                                                options:0
+                                                                  error:nil];
+    });
+    NSString *stripped = [timestampRE stringByReplacingMatchesInString:lower
+                                                              options:0
+                                                                range:NSMakeRange(0, lower.length)
+                                                         withTemplate:@""];
+    return stripped;
+}
+
 @implementation UplinCApp (LogWatcher)
 
 - (void)startLogWatcher {
@@ -34,7 +106,7 @@
     NSError *error = nil;
     if ([task launchAndReturnError:&error]) {
         self.logTask = task;
-        self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
+        self.logStatusMenuItem.title = @"Log watch: running, failures 0.0/4.0";
         [self appendLog:@"log_watch started"];
     } else {
         self.logWatchEnabled = NO;
@@ -51,63 +123,119 @@
     [self appendLog:@"log_watch stopped"];
 }
 
-- (void)handleLog:(NSString *)text {
-    NSString *lower = [text lowercaseString];
-    NSArray<NSString *> *failureWords = @[
-        @"disconnected",
-        @"connection interrupted",
-        @"connection failed",
-        @"connection refused",
-        @"connection reset",
-        @"timed out",
-        @"not reachable",
-        @"peer not found",
-        @"device not found",
-        @"receive failed",
-        @"activate failed",
-        @"p2pstream canceled"
-    ];
-
-    BOOL matched = NO;
-    for (NSString *word in failureWords) {
-        if ([lower containsString:word]) {
-            matched = YES;
-            break;
-        }
-    }
-    if (!matched) {
-        return;
-    }
-
+- (void)pruneFailureLogWindow {
     NSDate *now = [NSDate date];
-    BOOL inGrace = [self isInResetGrace] || [self isInPostWakeGrace];
-    if (inGrace) {
-        [self.failureLogTimestamps removeAllObjects];
-        self.lastFailureLogAt = now;
-        self.failureLogHits = 0;
-        self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
-        [self appendLog:[NSString stringWithFormat:@"failure_log ignored=grace line=\"%@\"", [self sanitizedSingleLine:text maxLength:500]]];
-        return;
-    }
-
-    while (self.failureLogTimestamps.count > 0) {
-        NSDate *oldest = self.failureLogTimestamps.firstObject;
-        if ([now timeIntervalSinceDate:oldest] > 120.0) {
-            [self.failureLogTimestamps removeObjectAtIndex:0];
+    while (self.failureLogEvents.count > 0) {
+        NSDictionary *oldest = self.failureLogEvents.firstObject;
+        NSDate *oldestAt = oldest[@"at"];
+        if (oldestAt != nil && [now timeIntervalSinceDate:oldestAt] > kFailureLogWindowSeconds) {
+            [self.failureLogEvents removeObjectAtIndex:0];
         } else {
             break;
         }
     }
-    [self.failureLogTimestamps addObject:now];
-    self.lastFailureLogAt = now;
-    self.failureLogHits = (NSInteger)self.failureLogTimestamps.count;
-    self.logStatusMenuItem.title = [NSString stringWithFormat:@"Log watch: running, failures %ld/4", (long)self.failureLogHits];
-    [self appendLog:[NSString stringWithFormat:@"failure_log hit=%ld/4 line=\"%@\"", (long)self.failureLogHits, [self sanitizedSingleLine:text maxLength:500]]];
-    if ([self canAutoReset] && self.failureLogHits >= 4) {
-        [self.failureLogTimestamps removeAllObjects];
+    double score = 0.0;
+    for (NSDictionary *evt in self.failureLogEvents) {
+        score += [evt[@"weight"] doubleValue];
+    }
+    if (score != self.failureLogScore) {
+        self.failureLogScore = score;
+        self.failureLogHits = (NSInteger)floor(score);
+        if (self.logTask != nil) {
+            self.logStatusMenuItem.title = [NSString stringWithFormat:@"Log watch: running, failures %.1f/%.1f", score, kFailureLogTriggerScore];
+        }
+    }
+}
+
+- (void)handleLog:(NSString *)text {
+    NSString *trimmed = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (trimmed.length == 0) {
+        return;
+    }
+    NSString *lower = [trimmed lowercaseString];
+
+    double weight = 0.0;
+    BOOL strongHit = NO;
+    for (NSString *marker in UCStrongMarkers()) {
+        if ([lower containsString:marker]) {
+            weight = kStrongMarkerWeight;
+            strongHit = YES;
+            break;
+        }
+    }
+    if (!strongHit) {
+        for (NSString *marker in UCWeakMarkers()) {
+            if (![lower containsString:marker]) {
+                continue;
+            }
+            BOOL severityCo = NO;
+            for (NSString *token in UCSeverityTokens()) {
+                if ([lower containsString:token]) {
+                    severityCo = YES;
+                    break;
+                }
+            }
+            weight = severityCo ? kWeakMarkerHeavyWeight : kWeakMarkerLightWeight;
+            break;
+        }
+    }
+    if (weight <= 0.0) {
+        return;
+    }
+
+    NSDate *now = [NSDate date];
+    NSString *sanitized = [self sanitizedSingleLine:trimmed maxLength:500];
+
+    if ([self isInResetGrace] || [self isInPostWakeGrace]) {
+        [self.failureLogEvents removeAllObjects];
+        self.failureLogScore = 0.0;
         self.failureLogHits = 0;
-        self.logStatusMenuItem.title = @"Log watch: running, failures 0/4";
-        [self appendLog:@"trigger failure_logs count=4 windowSeconds=120"];
+        self.lastFailureLogAt = now;
+        self.lastFailureLogLine = sanitized;
+        self.logStatusMenuItem.title = @"Log watch: running, failures 0.0/4.0";
+        [self appendLog:[NSString stringWithFormat:@"failure_log ignored=grace weight=%.1f line=\"%@\"", weight, sanitized]];
+        return;
+    }
+
+    NSString *dupKeyRaw = UCDupSuppressionKey(lower);
+    NSString *dupKey = [self sanitizedSingleLine:dupKeyRaw maxLength:200];
+    NSDate *previousHit = self.recentLogMessageHashes[dupKey];
+    if (previousHit != nil && [now timeIntervalSinceDate:previousHit] < kDuplicateSuppressionSeconds) {
+        self.recentLogMessageHashes[dupKey] = now;
+        [self appendLog:[NSString stringWithFormat:@"failure_log dup_suppressed weight=%.1f line=\"%@\"", weight, sanitized]];
+        return;
+    }
+    self.recentLogMessageHashes[dupKey] = now;
+    if (self.recentLogMessageHashes.count > kRecentLogHashesPruneAt) {
+        NSMutableArray<NSString *> *expired = [NSMutableArray array];
+        for (NSString *key in self.recentLogMessageHashes) {
+            NSDate *seenAt = self.recentLogMessageHashes[key];
+            if ([now timeIntervalSinceDate:seenAt] >= kDuplicateSuppressionSeconds) {
+                [expired addObject:key];
+            }
+        }
+        [self.recentLogMessageHashes removeObjectsForKeys:expired];
+    }
+
+    NSMutableDictionary<NSString *, id> *event = [NSMutableDictionary dictionary];
+    event[@"at"] = now;
+    event[@"weight"] = @(weight);
+    event[@"text"] = sanitized;
+    [self.failureLogEvents addObject:event];
+    self.lastFailureLogAt = now;
+    self.lastFailureLogLine = sanitized;
+
+    [self pruneFailureLogWindow];
+    double score = self.failureLogScore;
+    self.logStatusMenuItem.title = [NSString stringWithFormat:@"Log watch: running, failures %.1f/%.1f", score, kFailureLogTriggerScore];
+    [self appendLog:[NSString stringWithFormat:@"failure_log weight=%.1f score=%.1f/%.1f line=\"%@\"", weight, score, kFailureLogTriggerScore, sanitized]];
+
+    if ([self canAutoReset] && score >= kFailureLogTriggerScore) {
+        [self.failureLogEvents removeAllObjects];
+        self.failureLogScore = 0.0;
+        self.failureLogHits = 0;
+        self.logStatusMenuItem.title = @"Log watch: running, failures 0.0/4.0";
+        [self appendLog:[NSString stringWithFormat:@"trigger failure_logs score=%.1f windowSeconds=%.0f", score, kFailureLogWindowSeconds]];
         [self resetUniversalControl:@"Universal Control failure logs were detected" force:NO manual:NO broadcast:YES];
     }
 }

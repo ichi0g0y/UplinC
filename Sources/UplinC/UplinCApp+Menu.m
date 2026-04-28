@@ -29,6 +29,26 @@
     self.machinesMenuItem.submenu = self.machinesSubmenu;
     self.lastResetMenuItem = [[NSMenuItem alloc] initWithTitle:@"Last reset: never" action:nil keyEquivalent:@""];
     self.lastResetMenuItem.enabled = NO;
+    self.diagnosticSubmenu = [[NSMenu alloc] initWithTitle:@"Diagnostic"];
+    self.diagnosticSubmenu.autoenablesItems = NO;
+    self.diagPgrepItem = [[NSMenuItem alloc] initWithTitle:@"pgrep UC: -" action:nil keyEquivalent:@""];
+    self.diagPgrepItem.enabled = NO;
+    self.diagTCPItem = [[NSMenuItem alloc] initWithTitle:@"TCP UC: -" action:nil keyEquivalent:@""];
+    self.diagTCPItem.enabled = NO;
+    self.diagHeartbeatItem = [[NSMenuItem alloc] initWithTitle:@"HB peers: -" action:nil keyEquivalent:@""];
+    self.diagHeartbeatItem.enabled = NO;
+    self.diagFailureScoreItem = [[NSMenuItem alloc] initWithTitle:@"Failure score: 0.0/4.0 (window 120s)" action:nil keyEquivalent:@""];
+    self.diagFailureScoreItem.enabled = NO;
+    self.diagRecentLineItem = [[NSMenuItem alloc] initWithTitle:@"Last: none" action:nil keyEquivalent:@""];
+    self.diagRecentLineItem.enabled = NO;
+    [self.diagnosticSubmenu addItem:self.diagPgrepItem];
+    [self.diagnosticSubmenu addItem:self.diagTCPItem];
+    [self.diagnosticSubmenu addItem:self.diagHeartbeatItem];
+    [self.diagnosticSubmenu addItem:[NSMenuItem separatorItem]];
+    [self.diagnosticSubmenu addItem:self.diagFailureScoreItem];
+    [self.diagnosticSubmenu addItem:self.diagRecentLineItem];
+    self.diagnosticMenuItem = [[NSMenuItem alloc] initWithTitle:@"Diagnostic" action:nil keyEquivalent:@""];
+    self.diagnosticMenuItem.submenu = self.diagnosticSubmenu;
     self.logFileMenuItem = [[NSMenuItem alloc] initWithTitle:@"Open Log File" action:@selector(openLogFile:) keyEquivalent:@""];
     self.logFileMenuItem.target = self;
 
@@ -59,6 +79,7 @@
     [menu addItem:self.heartbeatStatusMenuItem];
     [menu addItem:self.lastResetMenuItem];
     [menu addItem:self.machinesMenuItem];
+    [menu addItem:self.diagnosticMenuItem];
     [menu addItem:self.logFileMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:resetItem];
@@ -72,6 +93,8 @@
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:quitItem];
     self.statusItem.menu = menu;
+    [self recordDiagnosticTick];
+    [self rebuildDiagnosticSubmenu];
     [self rebuildMachinesSubmenu];
     [self updateToggleStates];
 }
