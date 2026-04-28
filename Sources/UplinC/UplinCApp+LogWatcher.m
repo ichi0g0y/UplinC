@@ -236,7 +236,7 @@ static NSString *UCDupSuppressionKey(NSString *lower) {
         self.failureLogHits = 0;
         self.logStatusMenuItem.title = @"Log watch: running, failures 0.0/4.0";
         [self appendLog:[NSString stringWithFormat:@"trigger failure_logs score=%.1f windowSeconds=%.0f", score, kFailureLogWindowSeconds]];
-        [self resetUniversalControl:@"Universal Control failure logs were detected" force:NO manual:NO broadcast:YES];
+        [self resetUniversalControl:@"Universal Control failure logs were detected" force:NO weak:YES manual:NO broadcast:YES];
     }
 }
 
