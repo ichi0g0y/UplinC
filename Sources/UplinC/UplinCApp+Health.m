@@ -28,12 +28,14 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
 
 - (void)clearTransientHealthCounters {
     self.failureLogHits = 0;
-    [self.failureLogTimestamps removeAllObjects];
+    self.failureLogScore = 0.0;
+    [self.failureLogEvents removeAllObjects];
+    [self.recentLogMessageHashes removeAllObjects];
     self.missedTCPChecks = 0;
     self.missedHeartbeatChecks = 0;
     self.tcpLinkHasBeenSeen = NO;
     self.heartbeatPeerHasBeenSeen = NO;
-    self.logStatusMenuItem.title = self.logTask != nil ? @"Log watch: running, failures 0/4" : self.logStatusMenuItem.title;
+    self.logStatusMenuItem.title = self.logTask != nil ? @"Log watch: running, failures 0.0/4.0" : self.logStatusMenuItem.title;
 }
 
 - (void)handleSystemDidWake:(NSNotification *)note {
@@ -60,6 +62,7 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
         [self pruneStaleHeartbeatPeers];
         self.lastHeartbeatPruneAt = now;
     }
+    [self rebuildDiagnosticSubmenu];
     [self rebuildMachinesSubmenu];
 }
 
@@ -88,6 +91,7 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
         [self checkTCPLinkHealth];
     }
     [self checkHeartbeatHealth];
+    [self recordDiagnosticTick];
 }
 
 - (void)checkTCPLinkHealth {
