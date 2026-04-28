@@ -21,7 +21,13 @@ const int UplinCHeartbeatPort = 54176;
     self.lastHeartbeatReceivedAt = [NSDate distantPast];
     self.resetGraceUntil = [NSDate distantPast];
     self.wakeAt = [NSDate distantPast];
-    self.failureLogTimestamps = [[NSMutableArray alloc] init];
+    self.failureLogEvents = [[NSMutableArray alloc] init];
+    self.failureLogScore = 0.0;
+    self.recentLogMessageHashes = [[NSMutableDictionary alloc] init];
+    self.lastFailureLogLine = nil;
+    self.diagPgrepSamples = [[NSMutableArray alloc] init];
+    self.diagTCPSamples = [[NSMutableArray alloc] init];
+    self.diagHeartbeatPeerSamples = [[NSMutableArray alloc] init];
     [self configureIdentity];
 
     NSNotificationCenter *workspaceCenter = [[NSWorkspace sharedWorkspace] notificationCenter];

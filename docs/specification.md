@@ -51,11 +51,12 @@ Exit statuses are written to the diagnostic log.
 
 - Health status for `UniversalControl`.
 - Last health check time.
-- Unified Log watch status and failure count.
+- Unified Log watch status and failure score.
 - TCP link status.
 - Heartbeat status.
 - Peer summary.
 - Last reset time.
+- `Diagnostic` submenu (read-only rolling state, see §Diagnostic Submenu).
 - `Open Log File`.
 - `Reset Universal Control`.
 - `Auto Heal`.
@@ -176,7 +177,17 @@ UplinC streams Unified Log events with:
 log stream --style compact --predicate 'process == "UniversalControl" OR process == "SidecarRelay" OR process == "sharingd"'
 ```
 
-Failure-looking log phrases include:
+Each matched line is assigned a weight. Strong markers are unambiguous failure signals and contribute a full hit; weak markers are also raised by ordinary disconnect or sleep flows and require a severity token on the same line to count as a full hit, otherwise they contribute a half hit.
+
+Strong markers (weight `1.0`):
+
+- `crashed`
+- `died`
+- `panic`
+- `fatal error`
+- `assertion failed`
+
+Weak markers (weight `1.0` when a severity token co-occurs on the same line, otherwise `0.5`):
 
 - `disconnected`
 - `connection interrupted`
@@ -191,7 +202,15 @@ Failure-looking log phrases include:
 - `activate failed`
 - `p2pstream canceled`
 
-Four hits within 2 minutes trigger a weak log-based reset.
+Severity tokens that promote a weak marker to a full hit:
+
+- `error`
+- `fail`
+- `fatal`
+
+Identical message text seen within 5 seconds is collapsed to a single hit (duplicate suppression). The dropped duplicate is logged as `failure_log dup_suppressed`.
+
+Weighted hits accumulate in a 120 second sliding window. Events older than 120 seconds are dropped both before each new event is recorded and on every Diagnostic submenu rebuild, so the displayed score reflects window expiry even when no new failure log is arriving. The weak log-based reset triggers when the windowed score reaches `4.0`.
 
 Weak log-based resets are subject to the automatic reset cooldown.
 
@@ -205,7 +224,7 @@ Strong reset signals:
 
 Weak reset signal:
 
-- Four failure-looking Unified Log hits within a sliding 2-minute window. Hits older than 120 seconds are dropped before each evaluation, so spaced-out failures spanning more than 2 minutes do not accumulate to the trigger threshold.
+- Failure-looking Unified Log events whose weighted score reaches `4.0` within a sliding 2-minute window. Strong markers (`crashed`, `died`, `panic`, `fatal error`, `assertion failed`) contribute `1.0` each. Weak markers contribute `1.0` only when a severity token (`error`, `fail`, `fatal`) co-occurs on the same line, otherwise they contribute `0.5`. Duplicate lines within 5 seconds are suppressed. Hits older than 120 seconds are dropped before each evaluation, so spaced-out failures spanning more than 2 minutes do not accumulate to the trigger threshold.
 
 Strong reset signals bypass the automatic reset cooldown when Auto Heal is enabled.
 
@@ -223,7 +242,7 @@ It applies only to weak log-based resets. Suppressed resets are logged with the 
 
 Two short suppression windows prevent cascading or spurious resets:
 
-- **Post-reset grace:** 60 seconds after a completed reset, all auto-reset triggers are suppressed and the transient counters (`failureLogTimestamps`, `missedTCPChecks`, `missedHeartbeatChecks`, `tcpLinkHasBeenSeen`, `heartbeatPeerHasBeenSeen`) are cleared. This avoids reset loops driven by post-`killall` failure logs or by the brief gap before `UniversalControl` restarts.
+- **Post-reset grace:** 60 seconds after a completed reset, all auto-reset triggers are suppressed and the transient counters (`failureLogEvents`, `failureLogScore`, `recentLogMessageHashes`, `missedTCPChecks`, `missedHeartbeatChecks`, `tcpLinkHasBeenSeen`, `heartbeatPeerHasBeenSeen`) are cleared. This avoids reset loops driven by post-`killall` failure logs or by the brief gap before `UniversalControl` restarts.
 - **Post-wake grace:** 90 seconds after `NSWorkspaceDidWakeNotification`, the same suppression and counter clear apply. The macOS network stack typically takes a few seconds to a few tens of seconds to resume after wake; observed `lsof` and heartbeat gaps during that window are no longer treated as failures.
 
 Status menu items continue to update during grace; only the auto-reset triggers are gated.
@@ -240,6 +259,23 @@ Universal Control restarted
 ```
 
 Notifications are presented even while the app is active.
+
+## Diagnostic Submenu
+
+The `Diagnostic` submenu exposes a read-only rolling view of the heuristics that drive auto-reset decisions. Samples are appended on the existing 5 second health tick and the submenu is rebuilt on the 1 Hz heartbeat tick — no extra timer is introduced — and it never accepts user input.
+
+Each row holds the last 12 samples (≈ 1 minute at the 5 second sampling cadence):
+
+- `pgrep UC`: per-sample presence of the `UniversalControl` process. `o` = running, `x` = missing.
+- `TCP UC`: per-sample count of `UniversalControl` TCP connections, sourced from the most recent `lsof` snapshot taken on the same 5 second health tick.
+- `HB peers`: per-sample count of fresh UplinC heartbeat peers (those seen within the last 30 seconds).
+
+Two summary rows below the per-sample rows are recomputed at every 1 Hz rebuild so they reflect the sliding 120 second window even when no new failure log has arrived:
+
+- `Failure score: %.1f/4.0 (window 120s)`: the current windowed weighted log score, with events older than 120 seconds pruned before each rebuild.
+- `Last: <text>`: the most recent matched failure log line, truncated to 80 characters. Shows `none` when no line has been matched since launch.
+
+The submenu is intended for in-app post-mortem inspection when the user wants to confirm whether a reset trigger fired (or should have fired) and is purely advisory — none of the displayed values are persisted.
 
 ## Diagnostic Log
 
@@ -267,7 +303,7 @@ Logged events include:
 - heartbeat sends and receives
 - remote reset broadcasts, receives, and rejects
 - peer summaries
-- Unified Log failure hits
+- Unified Log failure hits, including the per-event `weight` and the windowed `score`, with `dup_suppressed` entries for lines collapsed by the 5 second duplicate suppression
 - reset triggers
 - cooldown suppression
 - reset command exit statuses
