@@ -71,6 +71,20 @@ Each UplinC instance has a stable UUID stored in `NSUserDefaults` under `Instanc
 
 Auto Heal, Notifications, and Sync Reset preferences are stored in `NSUserDefaults`.
 
+## Persistence
+
+UplinC persists the canonical IPv6 addresses of past Universal Control TCP peers (`ucPeersEverSeen`) to `NSUserDefaults` under the key `UCPeersLastSeen`. The on-disk schema is a dictionary keyed by canonical address with `NSNumber` values holding `timeIntervalSince1970` of the most recent observation.
+
+Entries older than 30 days are pruned at launch and on insert. Defaults writes are debounced: a write happens immediately when a new address is added, and otherwise at most once per 60 seconds during repeated observations of known addresses.
+
+The persisted set keeps the heartbeat-disappearance reset trigger and Sync Reset broadcast targeting effective immediately after app launch, before any new TCP peer is observed in the current process.
+
+If the persisted value is missing, malformed, or contains entries with unexpected types, UplinC clears the bad value, logs `persistence_load_fail`, and starts with an empty set rather than failing to launch.
+
+## Address Canonicalization
+
+All IPv6 addresses persisted, compared, or matched against `ucPeersEverSeen` flow through `canonicalIPv6String:`, which routes both numeric scope IDs (`fe80::xxx%4`) and named scope IDs (`fe80::xxx%en0`) through `if_nametoindex` and emits the numeric form. This applies to addresses observed via `lsof` for TCP discovery and to addresses observed in the IPv6 sockaddr of inbound UDP heartbeats and reset commands.
+
 ## Heartbeat Protocol
 
 UplinC listens on UDP port `54176` over IPv6.
@@ -109,6 +123,8 @@ The peer summary includes:
 The menu display is compact and truncated for readability. The diagnostic log records the full peer summary.
 
 The Machines submenu also annotates each row with the resolved interface name (for example `en0`, `en1`, `awdl0`) when the heartbeat arrived over a link-local IPv6 address with a known scope. This is observation only — UplinC cannot force which interface Universal Control uses.
+
+Heartbeat peers older than 10 seconds are grouped under an "Offline" section in the Machines submenu, and entries older than 24 hours are removed from the in-memory peer table on a 60-second cadence so the table does not grow unboundedly during long uptimes. The 24 hour threshold applies only to the heartbeat peer table; the persisted `ucPeersEverSeen` history uses the 30 day TTL described in §Persistence.
 
 ## Sync Reset Protocol
 
