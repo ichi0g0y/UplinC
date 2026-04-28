@@ -3,8 +3,12 @@
 static const NSTimeInterval kHeartbeatStaleSeconds = 15.0;
 static const NSInteger kHeartbeatTriggerMisses = 6;
 static const NSInteger kTCPMissesUntilReset = 12;
+static const NSInteger kProcessMissesUntilReset = 2;
 static const NSTimeInterval kPostResetGraceSeconds = 60.0;
 static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
+static const NSTimeInterval kHealthTickSeconds = 5.0;
+static const NSTimeInterval kResetExitPollIntervalSeconds = 0.2;
+static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
 
 @implementation UplinCApp (Health)
 
@@ -33,6 +37,7 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
     [self.recentLogMessageHashes removeAllObjects];
     self.missedTCPChecks = 0;
     self.missedHeartbeatChecks = 0;
+    self.missedProcessChecks = 0;
     self.tcpLinkHasBeenSeen = NO;
     self.heartbeatPeerHasBeenSeen = NO;
     self.logStatusMenuItem.title = self.logTask != nil ? @"Log watch: running, failures 0.0/4.0" : self.logStatusMenuItem.title;
@@ -82,9 +87,22 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
     }
 
     BOOL inGrace = [self isInResetGrace] || [self isInPostWakeGrace];
-    if ([self canAutoReset] && !running && !inGrace) {
-        [self appendLog:@"trigger process_missing reason=UniversalControl"];
-        [self resetUniversalControl:@"UniversalControl process was missing" force:YES manual:NO broadcast:YES];
+    if (![self canAutoReset] || inGrace) {
+        self.missedProcessChecks = 0;
+    } else if (running) {
+        if (self.missedProcessChecks > 0) {
+            [self appendLog:[NSString stringWithFormat:@"process_recovered previousMisses=%ld", (long)self.missedProcessChecks]];
+        }
+        self.missedProcessChecks = 0;
+    } else {
+        self.missedProcessChecks += 1;
+        [self appendLog:[NSString stringWithFormat:@"process_missing miss=%ld/%ld", (long)self.missedProcessChecks, (long)kProcessMissesUntilReset]];
+        if (self.missedProcessChecks >= kProcessMissesUntilReset) {
+            NSInteger triggeredMisses = self.missedProcessChecks;
+            self.missedProcessChecks = 0;
+            [self appendLog:[NSString stringWithFormat:@"trigger process_missing reason=UniversalControl misses=%ld durationSeconds=%ld", (long)triggeredMisses, (long)(triggeredMisses * (NSInteger)kHealthTickSeconds)]];
+            [self resetUniversalControl:@"UniversalControl process was missing" force:YES weak:NO manual:NO broadcast:YES];
+        }
     }
 
     if (self.tcpWatchEnabled) {
@@ -97,10 +115,11 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
 - (void)checkTCPLinkHealth {
     NSInteger ucConnectionCount = 0;
     NSInteger rapportLinkLocalCount = 0;
+    NSInteger ucIncompleteCount = 0;
     NSArray<NSString *> *ucPeerAddresses = nil;
-    [self getTCPConnectionCount:&ucConnectionCount rapportLinkLocalCount:&rapportLinkLocalCount ucPeerAddresses:&ucPeerAddresses];
+    [self getTCPConnectionCount:&ucConnectionCount rapportLinkLocalCount:&rapportLinkLocalCount ucIncompleteCount:&ucIncompleteCount ucPeerAddresses:&ucPeerAddresses];
     if (ucConnectionCount != self.lastLoggedUCConnectionCount || rapportLinkLocalCount != self.lastLoggedRapportLinkLocalCount) {
-        [self appendLog:[NSString stringWithFormat:@"tcp_state ucConnections=%ld rapportLinkLocal=%ld seen=%@ misses=%ld", (long)ucConnectionCount, (long)rapportLinkLocalCount, self.tcpLinkHasBeenSeen ? @"yes" : @"no", (long)self.missedTCPChecks]];
+        [self appendLog:[NSString stringWithFormat:@"tcp_state ucConnections=%ld rapportLinkLocal=%ld ucIncomplete=%ld seen=%@ misses=%ld", (long)ucConnectionCount, (long)rapportLinkLocalCount, (long)ucIncompleteCount, self.tcpLinkHasBeenSeen ? @"yes" : @"no", (long)self.missedTCPChecks]];
         self.lastLoggedUCConnectionCount = ucConnectionCount;
         self.lastLoggedRapportLinkLocalCount = rapportLinkLocalCount;
     }
@@ -112,7 +131,7 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
         }
         self.tcpLinkHasBeenSeen = YES;
         self.missedTCPChecks = 0;
-    } else if (self.tcpLinkHasBeenSeen && !inGrace) {
+    } else if (self.tcpLinkHasBeenSeen && !inGrace && ucIncompleteCount == 0) {
         self.missedTCPChecks += 1;
         [self appendLog:[NSString stringWithFormat:@"tcp_missing miss=%ld/%ld", (long)self.missedTCPChecks, (long)kTCPMissesUntilReset]];
     }
@@ -128,7 +147,7 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
         self.tcpLinkHasBeenSeen = NO;
         self.tcpStatusMenuItem.title = @"TCP link: reset triggered";
         [self appendLog:[NSString stringWithFormat:@"trigger tcp_missing misses=%ld durationSeconds=%ld", (long)kTCPMissesUntilReset, (long)(kTCPMissesUntilReset * 5)]];
-        [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES manual:NO broadcast:YES];
+        [self resetUniversalControl:@"Universal Control TCP links disappeared for 60 seconds" force:YES weak:NO manual:NO broadcast:YES];
     } else if (!self.resetInProgress && self.tcpLinkHasBeenSeen && self.missedTCPChecks > 0) {
         [self setStatusIcon:@"exclamationmark.triangle" fallbackTitle:@"UC!" description:@"Universal Control TCP links missing"];
     }
@@ -198,14 +217,14 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
     if ([self canAutoReset] && !inGrace && self.heartbeatPeerHasBeenSeen && self.missedHeartbeatChecks >= kHeartbeatTriggerMisses && self.ucPeersEverSeen.count > 0 && peerAddresses.count == 0) {
         self.missedHeartbeatChecks = 0;
         [self appendLog:[NSString stringWithFormat:@"trigger heartbeat_missing misses=%ld tcpAlsoMissing=yes ucPeersEverSeen=%lu", (long)kHeartbeatTriggerMisses, (unsigned long)self.ucPeersEverSeen.count]];
-        [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES manual:NO broadcast:YES];
+        [self resetUniversalControl:@"UplinC heartbeat and TCP link disappeared" force:YES weak:NO manual:NO broadcast:YES];
     }
 }
 
-- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force manual:(BOOL)manual broadcast:(BOOL)broadcast {
+- (void)resetUniversalControl:(NSString *)reason force:(BOOL)force weak:(BOOL)isWeak manual:(BOOL)manual broadcast:(BOOL)broadcast {
     NSDate *now = [NSDate date];
-    if (!force && [now timeIntervalSinceDate:self.lastResetAttempt] < 300.0) {
-        [self appendLog:[NSString stringWithFormat:@"reset_suppressed cooldown reason=\"%@\" secondsSinceLast=%.1f", reason, [now timeIntervalSinceDate:self.lastResetAttempt]]];
+    if (!force && [now timeIntervalSinceDate:self.lastWeakResetAttempt] < 300.0) {
+        [self appendLog:[NSString stringWithFormat:@"reset_suppressed cooldown reason=\"%@\" secondsSinceLast=%.1f", reason, [now timeIntervalSinceDate:self.lastWeakResetAttempt]]];
         return;
     }
     if (self.resetInProgress) {
@@ -215,17 +234,36 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
     if (broadcast) {
         [self sendResetCommandViaBonjour:reason];
     }
-    self.lastResetAttempt = now;
+    if (isWeak) {
+        self.lastWeakResetAttempt = now;
+    } else {
+        self.lastResetAttempt = now;
+    }
     self.resetInProgress = YES;
     self.statusMenuItem.title = [NSString stringWithFormat:@"Resetting: %@", reason];
     [self setStatusIcon:@"arrow.triangle.2.circlepath" fallbackTitle:@"UC..." description:@"Universal Control restarting"];
-    [self appendLog:[NSString stringWithFormat:@"reset_start force=%@ reason=\"%@\"", force ? @"yes" : @"no", reason]];
+    [self appendLog:[NSString stringWithFormat:@"reset_start force=%@ weak=%@ reason=\"%@\"", force ? @"yes" : @"no", isWeak ? @"yes" : @"no", reason]];
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         int killUC = [self run:@"/usr/bin/killall" arguments:@[@"UniversalControl"]];
         int killSidecar = [self run:@"/usr/bin/killall" arguments:@[@"SidecarRelay"]];
         int killSharing = [self run:@"/usr/bin/killall" arguments:@[@"sharingd"]];
-        [NSThread sleepForTimeInterval:2.0];
+
+        NSDate *waitStart = [NSDate date];
+        NSDate *deadline = [waitStart dateByAddingTimeInterval:kResetExitPollTimeoutSeconds];
+        NSInteger pollAttempts = 0;
+        BOOL exited = NO;
+        while ([deadline timeIntervalSinceNow] > 0) {
+            [NSThread sleepForTimeInterval:kResetExitPollIntervalSeconds];
+            pollAttempts += 1;
+            if (![self isProcessRunning:@"UniversalControl"]) {
+                exited = YES;
+                break;
+            }
+        }
+        NSTimeInterval waitMs = [[NSDate date] timeIntervalSinceDate:waitStart] * 1000.0;
+        [self appendLog:[NSString stringWithFormat:@"reset_wait_exit exited=%@ attempts=%ld waitMs=%.0f", exited ? @"yes" : @"no", (long)pollAttempts, waitMs]];
+
         int openStatus = [self run:@"/usr/bin/open" arguments:@[@"-gj", @"/System/Library/CoreServices/UniversalControl.app"]];
         [self appendLog:[NSString stringWithFormat:@"reset_commands killUniversalControl=%d killSidecarRelay=%d killSharingd=%d openUniversalControl=%d", killUC, killSidecar, killSharing, openStatus]];
 

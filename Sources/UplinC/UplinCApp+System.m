@@ -8,28 +8,40 @@
 - (BOOL)isProcessRunning:(NSString *)name {
     return [self run:@"/usr/bin/pgrep" arguments:@[@"-x", name]] == 0;
 }
-- (void)getTCPConnectionCount:(NSInteger *)ucConnectionCount rapportLinkLocalCount:(NSInteger *)rapportLinkLocalCount ucPeerAddresses:(NSArray<NSString *> **)ucPeerAddresses {
+- (void)getTCPConnectionCount:(NSInteger *)ucConnectionCount rapportLinkLocalCount:(NSInteger *)rapportLinkLocalCount ucIncompleteCount:(NSInteger *)ucIncompleteCount ucPeerAddresses:(NSArray<NSString *> **)ucPeerAddresses {
     *ucConnectionCount = 0;
     *rapportLinkLocalCount = 0;
+    if (ucIncompleteCount != NULL) {
+        *ucIncompleteCount = 0;
+    }
     NSMutableOrderedSet<NSString *> *peers = [[NSMutableOrderedSet alloc] init];
 
-    NSString *output = [self outputFrom:@"/usr/sbin/lsof" arguments:@[@"-nP", @"-iTCP", @"-sTCP:ESTABLISHED"]];
+    NSString *output = [self outputFrom:@"/usr/sbin/lsof" arguments:@[@"-nP", @"-iTCP"]];
     NSArray<NSString *> *lines = [output componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
 
     for (NSString *line in lines) {
-        if (![line containsString:@"(ESTABLISHED)"]) {
+        BOOL isUC = [line hasPrefix:@"Universal"];
+        BOOL isRapport = [line hasPrefix:@"rapportd"];
+        if (!isUC && !isRapport) {
             continue;
         }
 
-        if ([line hasPrefix:@"Universal"]) {
-            *ucConnectionCount += 1;
-            NSString *peerAddress = [self peerAddressFromLsofLine:line];
-            if (peerAddress.length > 0) {
-                [peers addObject:peerAddress];
+        if (isUC) {
+            if ([line containsString:@"(ESTABLISHED)"]) {
+                *ucConnectionCount += 1;
+                NSString *peerAddress = [self peerAddressFromLsofLine:line];
+                if (peerAddress.length > 0) {
+                    [peers addObject:peerAddress];
+                }
+            } else if ([line containsString:@"(SYN_SENT)"] || [line containsString:@"(SYN_RCVD)"]) {
+                if (ucIncompleteCount != NULL) {
+                    *ucIncompleteCount += 1;
+                }
             }
+            continue;
         }
 
-        if ([line hasPrefix:@"rapportd"] && [line containsString:@"[fe80:"]) {
+        if (isRapport && [line containsString:@"(ESTABLISHED)"] && [line containsString:@"[fe80:"]) {
             *rapportLinkLocalCount += 1;
         }
     }
@@ -40,8 +52,9 @@
 - (NSArray<NSString *> *)universalControlPeerAddresses {
     NSInteger ucConnectionCount = 0;
     NSInteger rapportLinkLocalCount = 0;
+    NSInteger ucIncompleteCount = 0;
     NSArray<NSString *> *peerAddresses = @[];
-    [self getTCPConnectionCount:&ucConnectionCount rapportLinkLocalCount:&rapportLinkLocalCount ucPeerAddresses:&peerAddresses];
+    [self getTCPConnectionCount:&ucConnectionCount rapportLinkLocalCount:&rapportLinkLocalCount ucIncompleteCount:&ucIncompleteCount ucPeerAddresses:&peerAddresses];
     return peerAddresses;
 }
 - (NSString *)peerAddressFromLsofLine:(NSString *)line {

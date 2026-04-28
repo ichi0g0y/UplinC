@@ -102,7 +102,7 @@
 - (void)resetNow:(id)sender {
     (void)sender;
     [self appendLog:@"manual_reset requested"];
-    [self resetUniversalControl:@"Manual reset" force:YES manual:YES broadcast:YES];
+    [self resetUniversalControl:@"Manual reset" force:YES weak:NO manual:YES broadcast:YES];
 }
 
 - (void)toggleAutoHeal:(id)sender {
