@@ -5,7 +5,7 @@
 
 extern const int UplinCHeartbeatPort;
 
-@interface UplinCApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate, NSNetServiceDelegate, NSNetServiceBrowserDelegate>
+@interface UplinCApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate, NSNetServiceDelegate, NSNetServiceBrowserDelegate, NSMenuDelegate>
 @property NSStatusItem *statusItem;
 @property NSMenuItem *statusMenuItem;
 @property NSMenuItem *lastCheckMenuItem;
@@ -15,6 +15,9 @@ extern const int UplinCHeartbeatPort;
 @property NSMenuItem *versionMenuItem;
 @property NSMenuItem *machinesMenuItem;
 @property NSMenu *machinesSubmenu;
+@property NSMenuItem *statusSubmenuItem;
+@property NSMenu *statusSubmenu;
+@property NSMenuItem *aboutMenuItem;
 @property NSMenuItem *lastResetMenuItem;
 @property NSMenuItem *logFileMenuItem;
 @property NSMenuItem *autoHealMenuItem;
@@ -47,6 +50,10 @@ extern const int UplinCHeartbeatPort;
 @property NSMutableDictionary<NSString *, NSDate *> *ucPeersLastSeen;
 @property NSDate *ucPeersLastPersistedAt;
 @property NSDate *lastHeartbeatPruneAt;
+@property NSDate *lastBonjourResolveAt;
+@property NSMutableDictionary<NSString *, NSString *> *resolvedHostnamesByAddress;
+@property NSMutableDictionary<NSString *, NSDate *> *hostnameLookupAttemptedAt;
+@property NSString *lastMachineFoldState;
 @property NSMutableSet<NSNumber *> *ucInterfaceScopes;
 @property NSMutableOrderedSet<NSString *> *recentRemoteResetNonces;
 @property NSMutableDictionary<NSString *, NSDate *> *recentRemoteResetNonceAt;
@@ -100,6 +107,7 @@ extern const int UplinCHeartbeatPort;
 - (void)toggleTCPWatch:(id)sender;
 - (void)toggleLaunchAtLogin:(id)sender;
 - (void)openLogFile:(id)sender;
+- (void)showAboutDialog:(id)sender;
 - (void)quit:(id)sender;
 - (void)updateToggleStates;
 - (BOOL)canAutoReset;
@@ -124,16 +132,22 @@ extern const int UplinCHeartbeatPort;
 - (void)netServiceBrowser:(NSNetServiceBrowser *)browser didRemoveService:(NSNetService *)service moreComing:(BOOL)moreComing;
 - (void)netServiceBrowser:(NSNetServiceBrowser *)browser didNotSearch:(NSDictionary<NSString *, NSNumber *> *)errorDict;
 - (NSInteger)sendHeartbeatViaBonjour;
+- (void)refreshBonjourResolutionsIfNeeded;
+- (void)resolveHostnameForAddressIfNeeded:(NSString *)address;
+- (void)copyAddressFromMenuItem:(id)sender;
 - (void)sendResetCommandViaBonjour:(NSString *)reason;
 - (void)drainHeartbeatSocket;
 - (NSString *)canonicalizedAddressFromSockaddr:(const struct sockaddr *)sa;
 - (void)handleRemoteResetPayload:(NSString *)payload fromAddress:(NSString *)senderAddressString senderHost:(NSString *)senderHost;
 - (NSDictionary<NSString *, NSString *> *)heartbeatFieldsFromPayload:(NSString *)payload;
 - (NSArray<NSDictionary<NSString *, id> *> *)recentHeartbeatPeers;
-- (NSArray<NSDictionary<NSString *, id> *> *)allKnownHeartbeatPeers;
+- (NSArray<NSDictionary<NSString *, id> *> *)allKnownMachines;
 - (NSString *)formatPeerAge:(NSTimeInterval)age;
 - (void)updatePeerStatusWithUCPeerAddresses:(NSArray<NSString *> *)ucPeerAddresses;
 - (void)rebuildMachinesSubmenu;
+- (NSImage *)machineIndicatorImageWithHeartbeat:(BOOL)hasHeartbeat
+                                universalControl:(BOOL)hasUniversalControl
+                                          online:(BOOL)isOnline;
 - (NSString *)compactAddress:(NSString *)address;
 - (NSString *)sanitizedToken:(NSString *)value;
 - (void)setStatusIcon:(NSString *)symbolName fallbackTitle:(NSString *)fallbackTitle description:(NSString *)description;
