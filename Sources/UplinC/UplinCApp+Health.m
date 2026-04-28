@@ -9,6 +9,9 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
 static const NSTimeInterval kHealthTickSeconds = 5.0;
 static const NSTimeInterval kResetExitPollIntervalSeconds = 0.2;
 static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
+static const NSTimeInterval kWeakResetCooldownSeconds = 300.0;
+static const NSTimeInterval kFailedResetCooldownSeconds = 30.0;
+static const NSTimeInterval kRelaunchVerifyDelaySeconds = 1.5;
 
 @implementation UplinCApp (Health)
 
@@ -224,7 +227,7 @@ static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
 
 - (void)resetUniversalControl:(NSString *)reason force:(BOOL)force weak:(BOOL)isWeak manual:(BOOL)manual broadcast:(BOOL)broadcast {
     NSDate *now = [NSDate date];
-    if (!force && [now timeIntervalSinceDate:self.lastWeakResetAttempt] < 300.0) {
+    if (!force && [now timeIntervalSinceDate:self.lastWeakResetAttempt] < kWeakResetCooldownSeconds) {
         [self appendLog:[NSString stringWithFormat:@"reset_suppressed cooldown reason=\"%@\" secondsSinceLast=%.1f", reason, [now timeIntervalSinceDate:self.lastWeakResetAttempt]]];
         return;
     }
@@ -246,9 +249,9 @@ static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
     [self appendLog:[NSString stringWithFormat:@"reset_start force=%@ weak=%@ reason=\"%@\"", force ? @"yes" : @"no", isWeak ? @"yes" : @"no", reason]];
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        int killUC = [self run:@"/usr/bin/killall" arguments:@[@"UniversalControl"]];
-        int killSidecar = [self run:@"/usr/bin/killall" arguments:@[@"SidecarRelay"]];
-        int killSharing = [self run:@"/usr/bin/killall" arguments:@[@"sharingd"]];
+        int killUC = [self run:@"/usr/bin/killall" arguments:@[@"-9", @"UniversalControl"]];
+        int killSidecar = [self run:@"/usr/bin/killall" arguments:@[@"-9", @"SidecarRelay"]];
+        int killSharing = [self run:@"/usr/bin/killall" arguments:@[@"-9", @"sharingd"]];
 
         NSDate *waitStart = [NSDate date];
         NSDate *deadline = [waitStart dateByAddingTimeInterval:kResetExitPollTimeoutSeconds];
@@ -265,9 +268,19 @@ static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
         NSTimeInterval waitMs = [[NSDate date] timeIntervalSinceDate:waitStart] * 1000.0;
         [self appendLog:[NSString stringWithFormat:@"reset_wait_exit exited=%@ attempts=%ld waitMs=%.0f", exited ? @"yes" : @"no", (long)pollAttempts, waitMs]];
 
+        if (!exited && isWeak) {
+            NSDate *adjusted = [NSDate dateWithTimeIntervalSinceNow:-(kWeakResetCooldownSeconds - kFailedResetCooldownSeconds)];
+            self.lastWeakResetAttempt = adjusted;
+            [self appendLog:[NSString stringWithFormat:@"reset_failed_kill cooldownRemainingSeconds=%.0f", kFailedResetCooldownSeconds]];
+        }
+
         int openStatus = [self run:@"/usr/bin/open" arguments:@[@"-gj", @"/System/Library/CoreServices/UniversalControl.app"]];
+        [NSThread sleepForTimeInterval:kRelaunchVerifyDelaySeconds];
+        BOOL relaunchedOK = [self isProcessRunning:@"UniversalControl"];
+        [self appendLog:[NSString stringWithFormat:@"relaunch_verified running=%@ openStatus=%d delaySeconds=%.1f", relaunchedOK ? @"yes" : @"no", openStatus, kRelaunchVerifyDelaySeconds]];
         [self appendLog:[NSString stringWithFormat:@"reset_commands killUniversalControl=%d killSidecarRelay=%d killSharingd=%d openUniversalControl=%d", killUC, killSidecar, killSharing, openStatus]];
 
+        NSTimeInterval graceSeconds = (!exited && isWeak) ? kFailedResetCooldownSeconds : kPostResetGraceSeconds;
         dispatch_async(dispatch_get_main_queue(), ^{
             NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
             formatter.timeStyle = NSDateFormatterMediumStyle;
@@ -275,10 +288,10 @@ static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
             self.lastResetMenuItem.title = [NSString stringWithFormat:@"Last reset: %@", [formatter stringFromDate:[NSDate date]]];
             self.statusMenuItem.title = @"Reset complete";
             self.resetInProgress = NO;
-            self.resetGraceUntil = [NSDate dateWithTimeIntervalSinceNow:kPostResetGraceSeconds];
+            self.resetGraceUntil = [NSDate dateWithTimeIntervalSinceNow:graceSeconds];
             [self clearTransientHealthCounters];
             [self setStatusIcon:@"link" fallbackTitle:@"UC" description:@"Universal Control OK"];
-            [self appendLog:[NSString stringWithFormat:@"reset_complete reason=\"%@\" graceSeconds=%.0f", reason, kPostResetGraceSeconds]];
+            [self appendLog:[NSString stringWithFormat:@"reset_complete reason=\"%@\" graceSeconds=%.0f", reason, graceSeconds]];
             [self notifyResetComplete:reason manual:manual];
         });
     });

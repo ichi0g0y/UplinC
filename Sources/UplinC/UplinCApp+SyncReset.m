@@ -59,15 +59,33 @@
         }
     }
 
+    BOOL fallback = NO;
     if (destinations.count == 0) {
-        [self appendLog:@"remote_reset_skipped reason=no_uc_peers"];
-        return;
+        for (NSString *peerName in [self.bonjourPeerAddresses.allKeys copy]) {
+            NSArray<NSData *> *addrs = self.bonjourPeerAddresses[peerName];
+            for (NSData *addrData in addrs) {
+                if (addrData.length < sizeof(struct sockaddr_in6)) {
+                    continue;
+                }
+                const struct sockaddr *sa = (const struct sockaddr *)addrData.bytes;
+                if (sa->sa_family != AF_INET6) {
+                    continue;
+                }
+                [destinations addObject:addrData];
+            }
+        }
+        if (destinations.count == 0) {
+            [self appendLog:@"remote_reset_skipped reason=no_uc_peers"];
+            return;
+        }
+        fallback = YES;
+        [self appendLog:[NSString stringWithFormat:@"remote_reset_fallback_path peers=%lu reason=no_uc_peers", (unsigned long)destinations.count]];
     }
 
     NSString *host = [self sanitizedToken:([[NSHost currentHost] localizedName] ?: [[NSHost currentHost] name] ?: @"unknown")];
     NSString *nonce = [[NSUUID UUID] UUIDString];
     NSString *safeReason = [self sanitizedToken:reason ?: @"unknown"];
-    NSString *payloadString = [NSString stringWithFormat:@"UPLINCRST 1 id=%@ host=%@ nonce=%@ reason=%@ time=%.0f", self.instanceID, host, nonce, safeReason, [[NSDate date] timeIntervalSince1970]];
+    NSString *payloadString = [NSString stringWithFormat:@"UPLINCRST 1 id=%@ host=%@ nonce=%@ reason=%@ fallback=%@ time=%.0f", self.instanceID, host, nonce, safeReason, fallback ? @"heartbeat" : @"uc", [[NSDate date] timeIntervalSince1970]];
     NSData *payloadData = [payloadString dataUsingEncoding:NSUTF8StringEncoding];
 
     for (NSUInteger attempt = 0; attempt < 3; attempt++) {
@@ -82,7 +100,7 @@
                     [self appendLog:[NSString stringWithFormat:@"remote_reset_send_failed nonce=%@ attempt=%lu errno=%d", nonce, (unsigned long)(attempt + 1), errno]];
                 }
             }
-            [self appendLog:[NSString stringWithFormat:@"remote_reset_broadcast nonce=%@ peers=%lu attempt=%lu", nonce, (unsigned long)destinations.count, (unsigned long)(attempt + 1)]];
+            [self appendLog:[NSString stringWithFormat:@"remote_reset_broadcast nonce=%@ peers=%lu attempt=%lu fallback=%@", nonce, (unsigned long)destinations.count, (unsigned long)(attempt + 1), fallback ? @"heartbeat" : @"uc"]];
         });
     }
 }
@@ -107,9 +125,35 @@
     }
 
     NSString *canonicalSender = [self canonicalIPv6String:senderAddressString];
-    if (canonicalSender.length == 0 || ![self.ucPeersEverSeen containsObject:canonicalSender]) {
-        [self appendLog:[NSString stringWithFormat:@"remote_reset_rejected reason=not_uc_peer from=%@", senderAddressString ?: @"unknown"]];
+    NSString *fallbackKind = fields[@"fallback"];
+    BOOL isFallback = [fallbackKind isEqualToString:@"heartbeat"];
+    BOOL knownUCPeer = canonicalSender.length > 0 && [self.ucPeersEverSeen containsObject:canonicalSender];
+    BOOL knownBonjourPeer = NO;
+    if (canonicalSender.length > 0) {
+        for (NSString *peerName in self.bonjourPeerAddresses) {
+            NSArray<NSData *> *addrs = self.bonjourPeerAddresses[peerName];
+            for (NSData *addrData in addrs) {
+                if (addrData.length < sizeof(struct sockaddr_in6)) {
+                    continue;
+                }
+                NSString *addr = [self canonicalizedAddressFromSockaddr:(const struct sockaddr *)addrData.bytes];
+                NSString *canonical = [self canonicalIPv6String:addr];
+                if (canonical.length > 0 && [canonical isEqualToString:canonicalSender]) {
+                    knownBonjourPeer = YES;
+                    break;
+                }
+            }
+            if (knownBonjourPeer) {
+                break;
+            }
+        }
+    }
+    if (!knownUCPeer && !(isFallback && knownBonjourPeer)) {
+        [self appendLog:[NSString stringWithFormat:@"remote_reset_rejected reason=not_uc_peer from=%@ fallback=%@", senderAddressString ?: @"unknown", fallbackKind ?: @"none"]];
         return;
+    }
+    if (isFallback && !knownUCPeer) {
+        [self appendLog:[NSString stringWithFormat:@"remote_reset_accepted_fallback from=%@", canonicalSender]];
     }
 
     NSDate *now = [NSDate date];

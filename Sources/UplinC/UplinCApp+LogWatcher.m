@@ -39,7 +39,11 @@ static NSArray<NSString *> *UCWeakMarkers(void) {
             @"device not found",
             @"receive failed",
             @"activate failed",
-            @"p2pstream canceled"
+            @"p2pstream canceled",
+            @"p2pdirectlink canceled",
+            @"kcancelederr",
+            @"ehostunreach",
+            @"etimedout"
         ];
     });
     return markers;
