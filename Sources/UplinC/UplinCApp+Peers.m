@@ -39,12 +39,32 @@
 
 - (NSArray<NSDictionary<NSString *, id> *> *)allKnownHeartbeatPeers {
     NSMutableArray<NSDictionary<NSString *, id> *> *peers = [[NSMutableArray alloc] init];
+    NSMutableSet<NSString *> *representedAddresses = [[NSMutableSet alloc] init];
     for (NSMutableDictionary<NSString *, id> *peer in self.heartbeatPeers.allValues) {
         NSDate *lastSeen = peer[@"lastSeen"];
         if (![lastSeen isKindOfClass:[NSDate class]]) {
             continue;
         }
         [peers addObject:[peer copy]];
+
+        NSString *address = peer[@"address"];
+        NSString *canonical = [address isKindOfClass:[NSString class]] ? [self canonicalIPv6String:address] : nil;
+        if (canonical.length > 0) {
+            [representedAddresses addObject:canonical];
+        }
+    }
+    for (NSString *address in self.ucPeersLastSeen) {
+        NSDate *lastSeen = self.ucPeersLastSeen[address];
+        if (![lastSeen isKindOfClass:[NSDate class]] || [representedAddresses containsObject:address]) {
+            continue;
+        }
+        [peers addObject:@{
+            @"id": address,
+            @"host": [self compactAddress:address],
+            @"address": address,
+            @"lastSeen": lastSeen,
+            @"persistedUC": @YES
+        }];
     }
     [peers sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
         NSString *hostA = ([a[@"host"] isKindOfClass:[NSString class]]) ? a[@"host"] : @"";
@@ -138,7 +158,8 @@
     for (NSDictionary<NSString *, id> *peer in peers) {
         NSDate *lastSeen = peer[@"lastSeen"];
         NSTimeInterval age = [lastSeen isKindOfClass:[NSDate class]] ? [now timeIntervalSinceDate:lastSeen] : DBL_MAX;
-        if (age <= 10.0) {
+        BOOL persistedOnly = [peer[@"persistedUC"] boolValue];
+        if (!persistedOnly && age <= 10.0) {
             [online addObject:peer];
         } else {
             [offline addObject:peer];

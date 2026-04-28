@@ -171,6 +171,32 @@
     return sentCount;
 }
 
+- (void)pruneStaleHeartbeatPeers {
+    if (self.heartbeatPeers.count == 0) {
+        return;
+    }
+    NSDate *cutoff = [NSDate dateWithTimeIntervalSinceNow:-86400.0];
+    NSMutableArray<NSString *> *toRemove = [[NSMutableArray alloc] init];
+    for (NSString *peerID in self.heartbeatPeers) {
+        NSMutableDictionary<NSString *, id> *peer = self.heartbeatPeers[peerID];
+        NSDate *lastSeen = peer[@"lastSeen"];
+        if (![lastSeen isKindOfClass:[NSDate class]]) {
+            [toRemove addObject:peerID];
+            continue;
+        }
+        if ([lastSeen compare:cutoff] == NSOrderedAscending) {
+            [toRemove addObject:peerID];
+        }
+    }
+    if (toRemove.count == 0) {
+        return;
+    }
+    for (NSString *peerID in toRemove) {
+        [self.heartbeatPeers removeObjectForKey:peerID];
+    }
+    [self appendLog:[NSString stringWithFormat:@"heartbeat_prune removed=%lu remaining=%lu cutoffSeconds=86400", (unsigned long)toRemove.count, (unsigned long)self.heartbeatPeers.count]];
+}
+
 - (void)drainHeartbeatSocket {
     if (self.heartbeatSocket < 0) {
         return;
