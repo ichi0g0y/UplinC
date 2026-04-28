@@ -10,7 +10,7 @@ const int UplinCHeartbeatPort = 54176;
     self.logWatchEnabled = YES;
     self.tcpWatchEnabled = YES;
     self.heartbeatPeers = [[NSMutableDictionary alloc] init];
-    self.ucPeersEverSeen = [[NSMutableSet alloc] init];
+    [self loadUCPeersFromDefaults];
     self.ucInterfaceScopes = [[NSMutableSet alloc] init];
     self.recentRemoteResetNonces = [[NSMutableOrderedSet alloc] init];
     self.bonjourPeers = [[NSMutableDictionary alloc] init];

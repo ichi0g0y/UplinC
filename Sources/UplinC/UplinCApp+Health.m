@@ -55,6 +55,11 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
 - (void)heartbeatTick {
     [self drainHeartbeatSocket];
     [self sendHeartbeatViaBonjour];
+    NSDate *now = [NSDate date];
+    if (self.lastHeartbeatPruneAt == nil || [now timeIntervalSinceDate:self.lastHeartbeatPruneAt] > 60.0) {
+        [self pruneStaleHeartbeatPeers];
+        self.lastHeartbeatPruneAt = now;
+    }
     [self rebuildMachinesSubmenu];
 }
 
@@ -133,7 +138,9 @@ static const NSTimeInterval kPostWakeGraceSeconds = 90.0;
         self.lastLoggedHeartbeatPeerCount = peerAddresses.count;
     }
 
-    [self.ucPeersEverSeen addObjectsFromArray:peerAddresses];
+    for (NSString *peerAddress in peerAddresses) {
+        [self noteUCPeerSeen:peerAddress];
+    }
 
     NSDate *now = [NSDate date];
     NSArray<NSDictionary<NSString *, id> *> *recent = [self recentHeartbeatPeers];
