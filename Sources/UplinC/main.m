@@ -37,12 +37,13 @@ const int UplinCHeartbeatPort = 54176;
     NSNotificationCenter *workspaceCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
     [workspaceCenter addObserver:self selector:@selector(handleSystemDidWake:) name:NSWorkspaceDidWakeNotification object:nil];
     [workspaceCenter addObserver:self selector:@selector(handleSystemWillSleep:) name:NSWorkspaceWillSleepNotification object:nil];
+    [workspaceCenter addObserver:self selector:@selector(handleScreensDidSleep:) name:NSWorkspaceScreensDidSleepNotification object:nil];
 
     [self configureMenu];
     [self configureNotifications];
     [self startHeartbeatSocket];
     [self startBonjour];
-    [self appendLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ autoHeal=%@ notifications=%@ syncReset=%@ logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.autoHealEnabled ? @"on" : @"off", self.notificationsEnabled ? @"on" : @"off", self.syncResetEnabled ? @"on" : @"off"]];
+    [self appendLog:[NSString stringWithFormat:@"app_start name=UplinC id=%@ autoHeal=%@ notifications=%@ syncReset=%@ sleepSync=%@ sleepDisplaysSync=%@ logWatch=on tcpWatch=on heartbeat=on", self.instanceID, self.autoHealEnabled ? @"on" : @"off", self.notificationsEnabled ? @"on" : @"off", self.syncResetEnabled ? @"on" : @"off", self.sleepSyncEnabled ? @"on" : @"off", self.sleepDisplaysSyncEnabled ? @"on" : @"off"]];
     [self startHealthTimer];
     [self startHeartbeatTimer];
     [self startLogWatcher];

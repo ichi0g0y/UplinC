@@ -19,7 +19,7 @@ clean:
 	rm -rf build dist
 
 check:
-	clang -fobjc-arc -Wall -Wextra -framework AppKit -framework UserNotifications -framework ServiceManagement Sources/UplinC/*.m -o /tmp/UplinC-check
+	clang -fobjc-arc -Wall -Wextra -framework AppKit -framework UserNotifications -framework ServiceManagement -framework CoreServices -framework IOKit Sources/UplinC/*.m -o /tmp/UplinC-check
 	plutil -lint Resources/Info.plist
 	zsh -n scripts/build_app.sh
 	zsh -n scripts/install_launch_agent.sh

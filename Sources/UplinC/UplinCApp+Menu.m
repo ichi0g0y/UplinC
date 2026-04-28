@@ -67,6 +67,10 @@
     self.notificationsMenuItem.target = self;
     self.syncResetMenuItem = [[NSMenuItem alloc] initWithTitle:@"Sync Reset" action:@selector(toggleSyncReset:) keyEquivalent:@""];
     self.syncResetMenuItem.target = self;
+    self.sleepSyncMenuItem = [[NSMenuItem alloc] initWithTitle:@"Sync Sleep" action:@selector(toggleSleepSync:) keyEquivalent:@""];
+    self.sleepSyncMenuItem.target = self;
+    self.sleepDisplaysSyncMenuItem = [[NSMenuItem alloc] initWithTitle:@"Sync Sleep Displays" action:@selector(toggleSleepDisplaysSync:) keyEquivalent:@""];
+    self.sleepDisplaysSyncMenuItem.target = self;
     self.logWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch UC Logs" action:@selector(toggleLogWatch:) keyEquivalent:@""];
     self.logWatchMenuItem.target = self;
     self.tcpWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch TCP Link" action:@selector(toggleTCPWatch:) keyEquivalent:@""];
@@ -87,6 +91,8 @@
     [menu addItem:self.autoHealMenuItem];
     [menu addItem:self.notificationsMenuItem];
     [menu addItem:self.syncResetMenuItem];
+    [menu addItem:self.sleepSyncMenuItem];
+    [menu addItem:self.sleepDisplaysSyncMenuItem];
     [menu addItem:self.logWatchMenuItem];
     [menu addItem:self.tcpWatchMenuItem];
     [menu addItem:self.launchAtLoginMenuItem];
@@ -139,6 +145,22 @@
     [[NSUserDefaults standardUserDefaults] setBool:self.syncResetEnabled forKey:@"SyncResetEnabled"];
     [self updateToggleStates];
     [self appendLog:[NSString stringWithFormat:@"setting syncReset=%@", self.syncResetEnabled ? @"on" : @"off"]];
+}
+
+- (void)toggleSleepSync:(id)sender {
+    (void)sender;
+    self.sleepSyncEnabled = !self.sleepSyncEnabled;
+    [[NSUserDefaults standardUserDefaults] setBool:self.sleepSyncEnabled forKey:@"SleepSyncEnabled"];
+    [self updateToggleStates];
+    [self appendLog:[NSString stringWithFormat:@"setting sleepSync=%@", self.sleepSyncEnabled ? @"on" : @"off"]];
+}
+
+- (void)toggleSleepDisplaysSync:(id)sender {
+    (void)sender;
+    self.sleepDisplaysSyncEnabled = !self.sleepDisplaysSyncEnabled;
+    [[NSUserDefaults standardUserDefaults] setBool:self.sleepDisplaysSyncEnabled forKey:@"SleepDisplaysSyncEnabled"];
+    [self updateToggleStates];
+    [self appendLog:[NSString stringWithFormat:@"setting sleepDisplaysSync=%@", self.sleepDisplaysSyncEnabled ? @"on" : @"off"]];
 }
 
 - (void)toggleLogWatch:(id)sender {
@@ -235,6 +257,8 @@
     self.autoHealMenuItem.state = self.autoHealEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.notificationsMenuItem.state = self.notificationsEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.syncResetMenuItem.state = self.syncResetEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    self.sleepSyncMenuItem.state = self.sleepSyncEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    self.sleepDisplaysSyncMenuItem.state = self.sleepDisplaysSyncEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.logWatchMenuItem.state = self.logWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.tcpWatchMenuItem.state = self.tcpWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
     self.launchAtLoginMenuItem.state = (SMAppService.mainAppService.status == SMAppServiceStatusEnabled)
