@@ -150,4 +150,110 @@
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
 }
 
+static NSString *const kUCPeersLastSeenDefaultsKey = @"UCPeersLastSeen";
+static const NSTimeInterval kUCPeersTTLSeconds = 30.0 * 24.0 * 3600.0;
+static const NSTimeInterval kUCPeersPersistDebounceSeconds = 60.0;
+
+- (NSInteger)pruneExpiredUCPeersAtDate:(NSDate *)now {
+    NSDate *cutoff = [now dateByAddingTimeInterval:-kUCPeersTTLSeconds];
+    NSMutableArray<NSString *> *expired = [[NSMutableArray alloc] init];
+    for (NSString *key in self.ucPeersLastSeen) {
+        NSDate *when = self.ucPeersLastSeen[key];
+        if (![when isKindOfClass:[NSDate class]] || [when compare:cutoff] == NSOrderedAscending) {
+            [expired addObject:key];
+        }
+    }
+    for (NSString *key in expired) {
+        [self.ucPeersLastSeen removeObjectForKey:key];
+        [self.ucPeersEverSeen removeObject:key];
+    }
+    return (NSInteger)expired.count;
+}
+
+- (void)loadUCPeersFromDefaults {
+    self.ucPeersEverSeen = [[NSMutableSet alloc] init];
+    self.ucPeersLastSeen = [[NSMutableDictionary alloc] init];
+    self.ucPeersLastPersistedAt = nil;
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    id raw = [defaults objectForKey:kUCPeersLastSeenDefaultsKey];
+    if (raw == nil) {
+        return;
+    }
+    if (![raw isKindOfClass:[NSDictionary class]]) {
+        [self appendLog:[NSString stringWithFormat:@"persistence_load_fail reason=type_mismatch class=%@", NSStringFromClass([raw class])]];
+        [defaults removeObjectForKey:kUCPeersLastSeenDefaultsKey];
+        return;
+    }
+
+    NSDictionary *dict = (NSDictionary *)raw;
+    NSDate *cutoff = [NSDate dateWithTimeIntervalSinceNow:-kUCPeersTTLSeconds];
+    NSInteger loaded = 0;
+    NSInteger pruned = 0;
+    for (id key in dict) {
+        if (![key isKindOfClass:[NSString class]] || [(NSString *)key length] == 0) {
+            continue;
+        }
+        id value = dict[key];
+        NSDate *when = nil;
+        if ([value isKindOfClass:[NSNumber class]]) {
+            when = [NSDate dateWithTimeIntervalSince1970:[value doubleValue]];
+        } else if ([value isKindOfClass:[NSDate class]]) {
+            when = (NSDate *)value;
+        }
+        if (![when isKindOfClass:[NSDate class]]) {
+            continue;
+        }
+        if ([when compare:cutoff] == NSOrderedAscending) {
+            pruned += 1;
+            continue;
+        }
+        [self.ucPeersEverSeen addObject:key];
+        self.ucPeersLastSeen[key] = when;
+        loaded += 1;
+    }
+    [self appendLog:[NSString stringWithFormat:@"persistence_load loaded=%ld pruned=%ld ttlDays=30", (long)loaded, (long)pruned]];
+    if (pruned > 0) {
+        [self saveUCPeersToDefaults];
+        self.ucPeersLastPersistedAt = [NSDate date];
+    }
+}
+
+- (void)saveUCPeersToDefaults {
+    NSMutableDictionary<NSString *, NSNumber *> *plist = [[NSMutableDictionary alloc] init];
+    for (NSString *key in self.ucPeersLastSeen) {
+        NSDate *when = self.ucPeersLastSeen[key];
+        if (![when isKindOfClass:[NSDate class]]) {
+            continue;
+        }
+        plist[key] = @([when timeIntervalSince1970]);
+    }
+    [[NSUserDefaults standardUserDefaults] setObject:plist forKey:kUCPeersLastSeenDefaultsKey];
+}
+
+- (void)noteUCPeerSeen:(NSString *)canonicalAddress {
+    if (canonicalAddress.length == 0) {
+        return;
+    }
+    NSDate *now = [NSDate date];
+    NSInteger pruned = [self pruneExpiredUCPeersAtDate:now];
+    BOOL isNew = ![self.ucPeersEverSeen containsObject:canonicalAddress];
+    [self.ucPeersEverSeen addObject:canonicalAddress];
+    self.ucPeersLastSeen[canonicalAddress] = now;
+
+    NSTimeInterval sinceLastWrite = self.ucPeersLastPersistedAt
+        ? [now timeIntervalSinceDate:self.ucPeersLastPersistedAt]
+        : DBL_MAX;
+    if (isNew || pruned > 0 || sinceLastWrite > kUCPeersPersistDebounceSeconds) {
+        [self saveUCPeersToDefaults];
+        self.ucPeersLastPersistedAt = now;
+        if (isNew) {
+            [self appendLog:[NSString stringWithFormat:@"uc_peer_remembered address=%@ total=%lu", canonicalAddress, (unsigned long)self.ucPeersEverSeen.count]];
+        }
+        if (pruned > 0) {
+            [self appendLog:[NSString stringWithFormat:@"uc_peer_prune removed=%ld ttlDays=30", (long)pruned]];
+        }
+    }
+}
+
 @end
