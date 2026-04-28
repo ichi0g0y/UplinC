@@ -171,6 +171,27 @@
     return sentCount;
 }
 
+- (void)refreshBonjourResolutionsIfNeeded {
+    NSDate *now = [NSDate date];
+    if (self.lastBonjourResolveAt != nil && [now timeIntervalSinceDate:self.lastBonjourResolveAt] < 60.0) {
+        return;
+    }
+    self.lastBonjourResolveAt = now;
+    if (self.bonjourPeers.count == 0) {
+        return;
+    }
+    for (NSString *name in [self.bonjourPeers.allKeys copy]) {
+        NSNetService *service = self.bonjourPeers[name];
+        if (service == nil) {
+            continue;
+        }
+        [service stop];
+        service.delegate = self;
+        [service resolveWithTimeout:10.0];
+    }
+    [self appendLog:[NSString stringWithFormat:@"bonjour_reresolve count=%lu", (unsigned long)self.bonjourPeers.count]];
+}
+
 - (void)pruneStaleHeartbeatPeers {
     if (self.heartbeatPeers.count == 0) {
         return;
