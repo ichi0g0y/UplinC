@@ -38,14 +38,19 @@ UplinC resets these processes:
 The reset sequence is:
 
 ```sh
-killall UniversalControl
-killall SidecarRelay
-killall sharingd
+killall -9 UniversalControl
+killall -9 SidecarRelay
+killall -9 sharingd
 # Poll `pgrep -x UniversalControl` every 200 ms for up to 3 seconds, until the process exits.
 open -gj /System/Library/CoreServices/UniversalControl.app
+# Sleep 1.5 seconds, then verify UniversalControl is running again via `pgrep -x`.
 ```
 
-Exit statuses are written to the diagnostic log along with a `reset_wait_exit` line that records whether `UniversalControl` actually exited within the 3-second poll window, the number of polls, and the elapsed wait. If the process does not exit in time the relaunch is still attempted as a best-effort fallback. `SidecarRelay` and `sharingd` are launchd-managed and are not relaunched explicitly; they respawn on demand.
+`SIGKILL` is required because `UniversalControl` ignores `SIGTERM` (the default `killall` signal); production logs from v0.1.9 showed `reset_wait_exit exited=no attempts=10-11` on every reset attempt, which made `open -gj` a no-op against the still-running daemon.
+
+Exit statuses are written to the diagnostic log along with a `reset_wait_exit` line that records whether `UniversalControl` actually exited within the 3-second poll window, the number of polls, and the elapsed wait. After the relaunch attempt UplinC waits 1.5 seconds and re-checks the process with `pgrep -x UniversalControl`, emitting a `relaunch_verified running=<yes|no>` line so the diagnostic log distinguishes a successful restart from a `launch services` call that returned 0 but did not actually bring the daemon back. If the process does not exit in time the relaunch is still attempted as a best-effort fallback. `SidecarRelay` and `sharingd` are launchd-managed and are not relaunched explicitly; they respawn on demand.
+
+When a weak reset (driven by the failure-log score trigger) finishes with `exited=no`, `lastWeakResetAttempt` is rolled back so that only the failed-kill cooldown of 30 seconds remains, **and the post-reset grace window is also shortened to 30 seconds for that cycle** (instead of the usual 60 seconds). Both the weak-reset cooldown and the reset grace gate the next failure-log trigger, so they must agree — keeping grace at 60 s while cooldown is 30 s would silently extend the effective wait to 60 s and defeat the rollback. Strong resets (`force:YES`) are not gated by `lastWeakResetAttempt` and keep the standard 60-second grace.
 
 ## Menu Items
 
@@ -134,17 +139,21 @@ When Sync Reset is enabled, manual resets and Auto Heal resets broadcast a reset
 Reset command payload format:
 
 ```text
-UPLINCRST 1 id=<sender_uuid> host=<host> nonce=<uuid> reason=<single_token> time=<unix_epoch_seconds>
+UPLINCRST 1 id=<sender_uuid> host=<host> nonce=<uuid> reason=<single_token> fallback=<uc|heartbeat> time=<unix_epoch_seconds>
 ```
 
+The `fallback` field is `uc` for the normal path (recipient address was selected from `ucPeersEverSeen`) and `heartbeat` when the heartbeat-peer fallback was taken because no UC peer addresses were available. Older receivers that pre-date the field treat it as an unknown trailing token and ignore it.
+
 Reset commands use the same UDP port, Bonjour discovery, and IPv6 socket as heartbeat packets. A sender transmits each logical command three times at 0, 250, and 500 milliseconds with the same nonce. Receivers track recently-processed nonces in a dedup set with a 5-minute TTL and a 256-entry hard cap. Entries older than 5 minutes are pruned lazily on each accepted candidate; if the set still exceeds 256 entries the oldest by insertion order are evicted. Duplicate nonces within the retention window are silently dropped without re-running the reset.
+
+When the sender has bonjour heartbeat peers but no destinations match `ucPeersEverSeen`, UplinC takes the **heartbeat-peer fallback path**: it broadcasts the same reset payload to every UDP address registered for the bonjour peers, sets `fallback=heartbeat`, and logs `remote_reset_fallback_path peers=N reason=no_uc_peers`. This handles the failure mode where Universal Control has fully collapsed on both Macs at once — TCP links vanish, `ucPeersEverSeen` filtering yields zero destinations, and yet the UplinC heartbeat channel is still healthy and exactly the right channel for a coordinated restart.
 
 Incoming reset commands are accepted only when all of these checks pass:
 
 - Sync Reset is enabled locally.
 - `id`, `nonce`, and `time` fields are present.
 - The sender ID is not the local instance ID.
-- The sender address is in `ucPeersEverSeen`.
+- The sender address is in `ucPeersEverSeen`, **or** the packet declares `fallback=heartbeat` *and* the sender address matches one of the locally tracked bonjour heartbeat peer addresses. The fallback acceptance path emits `remote_reset_accepted_fallback from=<address>` for diagnostic visibility.
 - The packet timestamp is within ±30 seconds of the local clock (relaxed from ±10 s to absorb NTP drift between paired Macs).
 - Once the local instance has performed at least one reset, the packet timestamp is no more than 5 minutes earlier than the local `lastResetAttempt`. This rejects long-window replays of historical reset packets after a Mac comes back from a long offline period.
 - The nonce has not already been processed.
@@ -204,6 +213,10 @@ Weak markers (weight `1.0` when a severity token co-occurs on the same line, oth
 - `receive failed`
 - `activate failed`
 - `p2pstream canceled`
+- `p2pdirectlink canceled`
+- `kcancelederr`
+- `ehostunreach`
+- `etimedout`
 
 Severity tokens that promote a weak marker to a full hit:
 
