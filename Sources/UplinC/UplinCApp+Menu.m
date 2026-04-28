@@ -10,25 +10,29 @@
 
     NSMenu *menu = [[NSMenu alloc] init];
     self.statusMenuItem = [[NSMenuItem alloc] initWithTitle:@"Starting..." action:nil keyEquivalent:@""];
-    self.statusMenuItem.enabled = NO;
     self.lastCheckMenuItem = [[NSMenuItem alloc] initWithTitle:@"Last check: never" action:nil keyEquivalent:@""];
-    self.lastCheckMenuItem.enabled = NO;
     self.logStatusMenuItem = [[NSMenuItem alloc] initWithTitle:@"Log watch: starting" action:nil keyEquivalent:@""];
-    self.logStatusMenuItem.enabled = NO;
     self.tcpStatusMenuItem = [[NSMenuItem alloc] initWithTitle:@"TCP link: not seen yet" action:nil keyEquivalent:@""];
-    self.tcpStatusMenuItem.enabled = NO;
     self.heartbeatStatusMenuItem = [[NSMenuItem alloc] initWithTitle:@"Heartbeat: starting" action:nil keyEquivalent:@""];
-    self.heartbeatStatusMenuItem.enabled = NO;
     NSString *bundleVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     NSString *versionTitle = bundleVersion.length > 0 ? [NSString stringWithFormat:@"UplinC v%@", bundleVersion] : @"UplinC";
     self.versionMenuItem = [[NSMenuItem alloc] initWithTitle:versionTitle action:nil keyEquivalent:@""];
-    self.versionMenuItem.enabled = NO;
     self.machinesSubmenu = [[NSMenu alloc] initWithTitle:@"Machines"];
     self.machinesSubmenu.autoenablesItems = NO;
     self.machinesMenuItem = [[NSMenuItem alloc] initWithTitle:@"Machines" action:nil keyEquivalent:@""];
     self.machinesMenuItem.submenu = self.machinesSubmenu;
     self.lastResetMenuItem = [[NSMenuItem alloc] initWithTitle:@"Last reset: never" action:nil keyEquivalent:@""];
-    self.lastResetMenuItem.enabled = NO;
+
+    self.statusSubmenu = [[NSMenu alloc] initWithTitle:@"Status"];
+    self.statusSubmenu.autoenablesItems = NO;
+    [self.statusSubmenu addItem:self.statusMenuItem];
+    [self.statusSubmenu addItem:self.lastCheckMenuItem];
+    [self.statusSubmenu addItem:self.logStatusMenuItem];
+    [self.statusSubmenu addItem:self.tcpStatusMenuItem];
+    [self.statusSubmenu addItem:self.heartbeatStatusMenuItem];
+    [self.statusSubmenu addItem:self.lastResetMenuItem];
+    self.statusSubmenuItem = [[NSMenuItem alloc] initWithTitle:@"Status" action:nil keyEquivalent:@""];
+    self.statusSubmenuItem.submenu = self.statusSubmenu;
     self.diagnosticSubmenu = [[NSMenu alloc] initWithTitle:@"Diagnostic"];
     self.diagnosticSubmenu.autoenablesItems = NO;
     self.diagPgrepItem = [[NSMenuItem alloc] initWithTitle:@"pgrep UC: -" action:nil keyEquivalent:@""];
@@ -51,6 +55,8 @@
     self.diagnosticMenuItem.submenu = self.diagnosticSubmenu;
     self.logFileMenuItem = [[NSMenuItem alloc] initWithTitle:@"Open Log File" action:@selector(openLogFile:) keyEquivalent:@""];
     self.logFileMenuItem.target = self;
+    self.aboutMenuItem = [[NSMenuItem alloc] initWithTitle:@"About UplinC..." action:@selector(showAboutDialog:) keyEquivalent:@""];
+    self.aboutMenuItem.target = self;
 
     NSMenuItem *resetItem = [[NSMenuItem alloc] initWithTitle:@"Reset Universal Control" action:@selector(resetNow:) keyEquivalent:@"r"];
     resetItem.target = self;
@@ -71,15 +77,9 @@
     NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quitItem.target = self;
 
-    [menu addItem:self.versionMenuItem];
-    [menu addItem:self.statusMenuItem];
-    [menu addItem:self.lastCheckMenuItem];
-    [menu addItem:self.logStatusMenuItem];
-    [menu addItem:self.tcpStatusMenuItem];
-    [menu addItem:self.heartbeatStatusMenuItem];
-    [menu addItem:self.lastResetMenuItem];
     [menu addItem:self.machinesMenuItem];
     [menu addItem:self.diagnosticMenuItem];
+    [menu addItem:self.statusSubmenuItem];
     [menu addItem:self.logFileMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:resetItem];
@@ -91,12 +91,24 @@
     [menu addItem:self.tcpWatchMenuItem];
     [menu addItem:self.launchAtLoginMenuItem];
     [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItem:self.versionMenuItem];
+    [menu addItem:self.aboutMenuItem];
+    [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:quitItem];
+    menu.delegate = self;
     self.statusItem.menu = menu;
     [self recordDiagnosticTick];
     [self rebuildDiagnosticSubmenu];
     [self rebuildMachinesSubmenu];
     [self updateToggleStates];
+}
+
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+    if (menu != self.statusItem.menu) {
+        return;
+    }
+    [self rebuildDiagnosticSubmenu];
+    [self rebuildMachinesSubmenu];
 }
 
 - (void)resetNow:(id)sender {
@@ -169,6 +181,49 @@
     [self ensureLogFileExists];
     int status = [self run:@"/usr/bin/open" arguments:@[[self logPath]]];
     [self appendLog:[NSString stringWithFormat:@"log_file opened status=%d", status]];
+}
+
+- (void)showAboutDialog:(id)sender {
+    (void)sender;
+    NSString *bundleVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
+    NSString *projectURLString = @"https://github.com/ichi0g0y/UplinC";
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleInformational;
+    alert.messageText = [NSString stringWithFormat:@"UplinC v%@", bundleVersion];
+    alert.informativeText = @"Universal Control monitor and recovery utility for macOS.\n\nWatches Universal Control health, exchanges UDP heartbeats with paired Macs, and triggers a coordinated reset when a session goes stale.";
+
+    NSImage *appIcon = [NSApp applicationIconImage];
+    if (appIcon != nil) {
+        alert.icon = appIcon;
+    }
+
+    NSTextField *linkField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 360, 22)];
+    linkField.editable = NO;
+    linkField.bordered = NO;
+    linkField.drawsBackground = NO;
+    linkField.selectable = YES;
+    linkField.allowsEditingTextAttributes = YES;
+    NSMutableAttributedString *attrs = [[NSMutableAttributedString alloc] initWithString:projectURLString];
+    NSURL *url = [NSURL URLWithString:projectURLString];
+    NSRange range = NSMakeRange(0, attrs.length);
+    if (url != nil) {
+        [attrs addAttribute:NSLinkAttributeName value:url range:range];
+    }
+    [attrs addAttribute:NSForegroundColorAttributeName value:[NSColor linkColor] range:range];
+    [attrs addAttribute:NSUnderlineStyleAttributeName value:@(NSUnderlineStyleSingle) range:range];
+    [attrs addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:[NSFont systemFontSize]] range:range];
+    linkField.attributedStringValue = attrs;
+    alert.accessoryView = linkField;
+
+    [alert addButtonWithTitle:@"Open Project Page"];
+    [alert addButtonWithTitle:@"Close"];
+
+    NSModalResponse response = [alert runModal];
+    if (response == NSAlertFirstButtonReturn && url != nil) {
+        [[NSWorkspace sharedWorkspace] openURL:url];
+        [self appendLog:[NSString stringWithFormat:@"about_open_url url=%@", projectURLString]];
+    }
 }
 
 - (void)quit:(id)sender {

@@ -13,7 +13,8 @@ static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
 @implementation UplinCApp (Health)
 
 - (void)startHealthTimer {
-    self.healthTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(checkHealth) userInfo:nil repeats:YES];
+    self.healthTimer = [NSTimer timerWithTimeInterval:5.0 target:self selector:@selector(checkHealth) userInfo:nil repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:self.healthTimer forMode:NSRunLoopCommonModes];
 }
 
 - (BOOL)isInResetGrace {
@@ -56,19 +57,19 @@ static const NSTimeInterval kResetExitPollTimeoutSeconds = 3.0;
 }
 
 - (void)startHeartbeatTimer {
-    self.heartbeatTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(heartbeatTick) userInfo:nil repeats:YES];
+    self.heartbeatTimer = [NSTimer timerWithTimeInterval:1.0 target:self selector:@selector(heartbeatTick) userInfo:nil repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:self.heartbeatTimer forMode:NSRunLoopCommonModes];
 }
 
 - (void)heartbeatTick {
     [self drainHeartbeatSocket];
     [self sendHeartbeatViaBonjour];
+    [self refreshBonjourResolutionsIfNeeded];
     NSDate *now = [NSDate date];
     if (self.lastHeartbeatPruneAt == nil || [now timeIntervalSinceDate:self.lastHeartbeatPruneAt] > 60.0) {
         [self pruneStaleHeartbeatPeers];
         self.lastHeartbeatPruneAt = now;
     }
-    [self rebuildDiagnosticSubmenu];
-    [self rebuildMachinesSubmenu];
 }
 
 - (void)checkHealth {
