@@ -1,6 +1,7 @@
 #import "UplinCApp.h"
 
 static const double kStrongMarkerWeight = 1.0;
+static const double kWeakMarkerCriticalWeight = 2.5;
 static const double kWeakMarkerHeavyWeight = 1.0;
 static const double kWeakMarkerLightWeight = 0.5;
 static const NSTimeInterval kDuplicateSuppressionSeconds = 5.0;
@@ -18,6 +19,17 @@ static NSArray<NSString *> *UCStrongMarkers(void) {
             @"panic",
             @"fatal error",
             @"assertion failed"
+        ];
+    });
+    return markers;
+}
+
+static NSArray<NSString *> *UCWeakMarkersCritical(void) {
+    static NSArray<NSString *> *markers;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        markers = @[
+            @"reset source device"
         ];
     });
     return markers;
@@ -165,6 +177,15 @@ static NSString *UCDupSuppressionKey(NSString *lower) {
             weight = kStrongMarkerWeight;
             strongHit = YES;
             break;
+        }
+    }
+    if (!strongHit) {
+        for (NSString *marker in UCWeakMarkersCritical()) {
+            if ([lower containsString:marker]) {
+                weight = kWeakMarkerCriticalWeight;
+                strongHit = YES;
+                break;
+            }
         }
     }
     if (!strongHit) {
