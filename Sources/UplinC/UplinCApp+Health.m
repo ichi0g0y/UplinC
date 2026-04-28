@@ -54,11 +54,6 @@ static const NSTimeInterval kRelaunchVerifyDelaySeconds = 1.5;
     [self appendLog:[NSString stringWithFormat:@"system_wake graceSeconds=%.0f", kPostWakeGraceSeconds]];
 }
 
-- (void)handleSystemWillSleep:(NSNotification *)note {
-    (void)note;
-    [self appendLog:@"system_sleep"];
-}
-
 - (void)startHeartbeatTimer {
     self.heartbeatTimer = [NSTimer timerWithTimeInterval:1.0 target:self selector:@selector(heartbeatTick) userInfo:nil repeats:YES];
     [[NSRunLoop mainRunLoop] addTimer:self.heartbeatTimer forMode:NSRunLoopCommonModes];
