@@ -97,15 +97,19 @@ Remote reset commands are nonce-deduped, freshness-checked, limited to known Uni
 
 Strong signals reset immediately when Auto Heal is enabled:
 
-- `UniversalControl` process is missing.
+- `UniversalControl` process is missing for two consecutive 5-second health checks (~10s).
 - Universal Control TCP links were previously seen and then disappear for 60 seconds.
-- UplinC heartbeat disappears while Universal Control TCP links are also missing.
+- UplinC heartbeat from a Universal Control TCP peer disappears while that peer's TCP link is also missing.
 
-Weak log-based resets use a 5-minute cooldown:
+Weak log-based reset:
 
-- 4 failure-looking Unified Log hits within 2 minutes.
+- Weighted Unified Log failure score reaches `4.0` within a sliding 120-second window. Strong markers (`crashed`, `died`, `panic`, `fatal error`, `assertion failed`) score `1.0`; weak markers (e.g. `disconnected`, `peer not found`) score `1.0` only when a severity token (`error`, `fail`, `fatal`) co-occurs on the same line, otherwise `0.5`. Identical messages within 5 seconds collapse to a single hit.
+
+Weak resets observe a 5-minute cooldown that is tracked separately from strong resets, so a strong reset does not gate a subsequent weak signal. Auto-resets are also suppressed for 60 seconds after a completed reset and for 90 seconds after macOS wake.
 
 Manual resets always run locally and broadcast through Sync Reset when enabled.
+
+See [docs/specification.md](docs/specification.md) for the full reset rules, grace windows, peer-history persistence, and the Diagnostic submenu.
 
 ## Diagnostics
 
