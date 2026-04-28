@@ -112,11 +112,35 @@
         return;
     }
 
+    NSDate *now = [NSDate date];
     NSTimeInterval packetTime = [timestamp doubleValue];
-    NSTimeInterval age = fabs([[NSDate date] timeIntervalSince1970] - packetTime);
-    if (age > 10.0) {
-        [self appendLog:[NSString stringWithFormat:@"remote_reset_rejected reason=stale age=%.1f", age]];
+    NSTimeInterval skew = [now timeIntervalSince1970] - packetTime;
+    if (fabs(skew) > 30.0) {
+        [self appendLog:[NSString stringWithFormat:@"remote_reset_rejected reason=stale skew=%+.1f", skew]];
         return;
+    }
+    if (![self.lastResetAttempt isEqualToDate:[NSDate distantPast]]) {
+        NSTimeInterval since = [self.lastResetAttempt timeIntervalSince1970] - packetTime;
+        if (since > 300.0) {
+            [self appendLog:[NSString stringWithFormat:@"remote_reset_rejected reason=replay_floor since=%.1f", since]];
+            return;
+        }
+    }
+
+    NSDate *cutoff = [now dateByAddingTimeInterval:-300.0];
+    NSMutableArray<NSString *> *expired = [[NSMutableArray alloc] init];
+    for (NSString *seen in self.recentRemoteResetNonces) {
+        NSDate *seenAt = self.recentRemoteResetNonceAt[seen];
+        if (![seenAt isKindOfClass:[NSDate class]] || [seenAt compare:cutoff] == NSOrderedAscending) {
+            [expired addObject:seen];
+        }
+    }
+    if (expired.count > 0) {
+        for (NSString *seen in expired) {
+            [self.recentRemoteResetNonces removeObject:seen];
+            [self.recentRemoteResetNonceAt removeObjectForKey:seen];
+        }
+        [self appendLog:[NSString stringWithFormat:@"remote_reset_dedup_prune removed=%lu retained=%lu", (unsigned long)expired.count, (unsigned long)self.recentRemoteResetNonces.count]];
     }
 
     if ([self.recentRemoteResetNonces containsObject:nonce]) {
@@ -128,14 +152,17 @@
     }
 
     [self.recentRemoteResetNonces addObject:nonce];
-    while (self.recentRemoteResetNonces.count > 64) {
+    self.recentRemoteResetNonceAt[nonce] = now;
+    while (self.recentRemoteResetNonces.count > 256) {
+        NSString *oldest = self.recentRemoteResetNonces[0];
         [self.recentRemoteResetNonces removeObjectAtIndex:0];
+        [self.recentRemoteResetNonceAt removeObjectForKey:oldest];
     }
 
     NSString *peerHost = senderHost.length > 0 ? senderHost : canonicalSender;
     NSString *remoteReason = fields[@"reason"] ?: @"unknown";
     [self appendLog:[NSString stringWithFormat:@"remote_reset_received from=%@ peer=%@ nonce=%@ reason=%@", canonicalSender, peerHost, nonce, remoteReason]];
-    [self resetUniversalControl:[NSString stringWithFormat:@"Remote reset from %@", peerHost] force:YES manual:NO broadcast:NO];
+    [self resetUniversalControl:[NSString stringWithFormat:@"Remote reset from %@", peerHost] force:YES weak:NO manual:NO broadcast:NO];
 }
 
 @end
