@@ -253,6 +253,12 @@
             [self handleRemoteResetPayload:payload fromAddress:senderAddressString senderHost:peerHost];
             continue;
         }
+        if ([payload hasPrefix:@"UPLINCSLP "]) {
+            NSDictionary<NSString *, NSString *> *sleepFields = [self heartbeatFieldsFromPayload:payload];
+            NSString *peerHost = sleepFields[@"host"] ?: senderAddressString;
+            [self handleRemoteSleepPayload:payload fromAddress:senderAddressString senderHost:peerHost];
+            continue;
+        }
         if (![payload hasPrefix:@"UPLINC "]) {
             continue;
         }
