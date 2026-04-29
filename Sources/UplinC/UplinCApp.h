@@ -5,6 +5,8 @@
 
 extern const int UplinCHeartbeatPort;
 
+@class UplinCToggleMenuItemView;
+
 @interface UplinCApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate, NSNetServiceDelegate, NSNetServiceBrowserDelegate, NSMenuDelegate>
 @property NSStatusItem *statusItem;
 @property NSMenuItem *statusMenuItem;

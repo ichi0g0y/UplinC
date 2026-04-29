@@ -1,5 +1,23 @@
 #import "UplinCApp.h"
+#import "UplinCToggleMenuItemView.h"
 #import <ServiceManagement/ServiceManagement.h>
+
+static NSMenuItem *uc_makeToggleItem(NSString *title, id target, SEL action) {
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:@""];
+    item.target = target;
+    UplinCToggleMenuItemView *view = [[UplinCToggleMenuItemView alloc] initWithTitle:title
+                                                                              target:target
+                                                                              action:action];
+    item.view = view;
+    return item;
+}
+
+static inline void uc_setToggle(NSMenuItem *item, BOOL on) {
+    item.state = on ? NSControlStateValueOn : NSControlStateValueOff;
+    if ([item.view isKindOfClass:[UplinCToggleMenuItemView class]]) {
+        [(UplinCToggleMenuItemView *)item.view setOn:on];
+    }
+}
 
 @implementation UplinCApp (Menu)
 
@@ -61,22 +79,14 @@
     NSMenuItem *resetItem = [[NSMenuItem alloc] initWithTitle:@"Reset Universal Control" action:@selector(resetNow:) keyEquivalent:@"r"];
     resetItem.target = self;
 
-    self.autoHealMenuItem = [[NSMenuItem alloc] initWithTitle:@"Auto Heal" action:@selector(toggleAutoHeal:) keyEquivalent:@""];
-    self.autoHealMenuItem.target = self;
-    self.notificationsMenuItem = [[NSMenuItem alloc] initWithTitle:@"Notifications" action:@selector(toggleNotifications:) keyEquivalent:@""];
-    self.notificationsMenuItem.target = self;
-    self.syncResetMenuItem = [[NSMenuItem alloc] initWithTitle:@"Sync Reset" action:@selector(toggleSyncReset:) keyEquivalent:@""];
-    self.syncResetMenuItem.target = self;
-    self.sleepSyncMenuItem = [[NSMenuItem alloc] initWithTitle:@"Sync Sleep" action:@selector(toggleSleepSync:) keyEquivalent:@""];
-    self.sleepSyncMenuItem.target = self;
-    self.sleepDisplaysSyncMenuItem = [[NSMenuItem alloc] initWithTitle:@"Sync Sleep Displays" action:@selector(toggleSleepDisplaysSync:) keyEquivalent:@""];
-    self.sleepDisplaysSyncMenuItem.target = self;
-    self.logWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch UC Logs" action:@selector(toggleLogWatch:) keyEquivalent:@""];
-    self.logWatchMenuItem.target = self;
-    self.tcpWatchMenuItem = [[NSMenuItem alloc] initWithTitle:@"Watch TCP Link" action:@selector(toggleTCPWatch:) keyEquivalent:@""];
-    self.tcpWatchMenuItem.target = self;
-    self.launchAtLoginMenuItem = [[NSMenuItem alloc] initWithTitle:@"Launch at Login" action:@selector(toggleLaunchAtLogin:) keyEquivalent:@""];
-    self.launchAtLoginMenuItem.target = self;
+    self.autoHealMenuItem          = uc_makeToggleItem(@"Auto Heal",           self, @selector(toggleAutoHeal:));
+    self.notificationsMenuItem     = uc_makeToggleItem(@"Notifications",       self, @selector(toggleNotifications:));
+    self.syncResetMenuItem         = uc_makeToggleItem(@"Sync Reset",          self, @selector(toggleSyncReset:));
+    self.sleepSyncMenuItem         = uc_makeToggleItem(@"Sync Sleep",          self, @selector(toggleSleepSync:));
+    self.sleepDisplaysSyncMenuItem = uc_makeToggleItem(@"Sync Sleep Displays", self, @selector(toggleSleepDisplaysSync:));
+    self.logWatchMenuItem          = uc_makeToggleItem(@"Watch UC Logs",       self, @selector(toggleLogWatch:));
+    self.tcpWatchMenuItem          = uc_makeToggleItem(@"Watch TCP Link",      self, @selector(toggleTCPWatch:));
+    self.launchAtLoginMenuItem     = uc_makeToggleItem(@"Launch at Login",     self, @selector(toggleLaunchAtLogin:));
 
     NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit" action:@selector(quit:) keyEquivalent:@"q"];
     quitItem.target = self;
@@ -254,16 +264,15 @@
 }
 
 - (void)updateToggleStates {
-    self.autoHealMenuItem.state = self.autoHealEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.notificationsMenuItem.state = self.notificationsEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.syncResetMenuItem.state = self.syncResetEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.sleepSyncMenuItem.state = self.sleepSyncEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.sleepDisplaysSyncMenuItem.state = self.sleepDisplaysSyncEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.logWatchMenuItem.state = self.logWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.tcpWatchMenuItem.state = self.tcpWatchEnabled ? NSControlStateValueOn : NSControlStateValueOff;
-    self.launchAtLoginMenuItem.state = (SMAppService.mainAppService.status == SMAppServiceStatusEnabled)
-        ? NSControlStateValueOn
-        : NSControlStateValueOff;
+    uc_setToggle(self.autoHealMenuItem,          self.autoHealEnabled);
+    uc_setToggle(self.notificationsMenuItem,     self.notificationsEnabled);
+    uc_setToggle(self.syncResetMenuItem,         self.syncResetEnabled);
+    uc_setToggle(self.sleepSyncMenuItem,         self.sleepSyncEnabled);
+    uc_setToggle(self.sleepDisplaysSyncMenuItem, self.sleepDisplaysSyncEnabled);
+    uc_setToggle(self.logWatchMenuItem,          self.logWatchEnabled);
+    uc_setToggle(self.tcpWatchMenuItem,          self.tcpWatchEnabled);
+    uc_setToggle(self.launchAtLoginMenuItem,
+                 SMAppService.mainAppService.status == SMAppServiceStatusEnabled);
 }
 
 @end
