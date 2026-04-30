@@ -19,21 +19,22 @@ jobs:
         id: ver
         run: |
           tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
-          if [[ "$version" =~ -(rc|beta|alpha) ]]; then
+          full_version="${tag#v}"
+          base_version="${full_version%%-*}"
+          if [[ "$full_version" =~ -(rc|beta|alpha) ]]; then
             is_prerelease=true
           else
             is_prerelease=false
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$base_version" >> "$GITHUB_OUTPUT"
           echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Verify tag matches Info.plist
         run: |
           plist_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
           if [[ "$plist_version" != "${{ steps.ver.outputs.version }}" ]]; then
-            echo "::error::Tag version (${{ steps.ver.outputs.version }}) does not match Info.plist CFBundleShortVersionString ($plist_version)."
+            echo "::error::Tag base version (${{ steps.ver.outputs.version }}) does not match Info.plist CFBundleShortVersionString ($plist_version)."
             exit 1
           fi
 
