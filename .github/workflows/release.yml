@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version and prerelease flag
+        id: ver
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if [[ "$version" =~ -(rc|beta|alpha) ]]; then
+            is_prerelease=true
+          else
+            is_prerelease=false
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches Info.plist
+        run: |
+          plist_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          if [[ "$plist_version" != "${{ steps.ver.outputs.version }}" ]]; then
+            echo "::error::Tag version (${{ steps.ver.outputs.version }}) does not match Info.plist CFBundleShortVersionString ($plist_version)."
+            exit 1
+          fi
+
+      - name: Build (ad-hoc signed) and package
+        id: pkg
+        run: |
+          set -euo pipefail
+          make build
+          version="${{ steps.ver.outputs.version }}"
+          archive="dist/UplinC-${version}.zip"
+          mkdir -p dist
+          find build/UplinC.app -exec touch -t 202601010000 {} +
+          COPYFILE_DISABLE=1 ditto -c -k --norsrc --noextattr --keepParent build/UplinC.app "$archive"
+          sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+          echo "$sha  UplinC-${version}.zip" > "${archive}.sha256"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          prerelease: ${{ steps.ver.outputs.is_prerelease }}
+          generate_release_notes: true
+          files: |
+            dist/UplinC-${{ steps.ver.outputs.version }}.zip
+            dist/UplinC-${{ steps.ver.outputs.version }}.zip.sha256
+
+      - name: Bump homebrew-tap cask
+        if: steps.ver.outputs.is_prerelease == 'false'
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          SHA256: ${{ steps.pkg.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          git clone "https://x-access-token:${TOKEN}@github.com/ichi0g0y/homebrew-tap.git" "$tmp/tap"
+          cd "$tmp/tap"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          sed -i '' -E 's/^(  version )"[^"]*"/\1"'"$VERSION"'"/' Casks/uplinc.rb
+          sed -i '' -E 's/^(  sha256 )"[^"]*"/\1"'"$SHA256"'"/'  Casks/uplinc.rb
+          if git diff --quiet; then
+            echo "No changes to uplinc.rb; nothing to commit."
+            exit 0
+          fi
+          git add Casks/uplinc.rb
+          git commit -m "Bump uplinc to ${VERSION}"
+          git push origin HEAD:main

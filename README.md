@@ -69,6 +69,18 @@ brew install --cask uplinc
 
 Homebrew installs UplinC as an app only. To start it at login, toggle `Launch at Login` in the menu, or use the LaunchAgent install step from a source checkout.
 
+## Releasing
+
+Releases are produced automatically by `.github/workflows/release.yml` on tag push.
+
+1. Bump `CFBundleShortVersionString` (and `CFBundleVersion`) in `Resources/Info.plist`. Open a PR and merge to `main`.
+2. Tag the merge commit: `git tag v<version> && git push origin v<version>`.
+3. The workflow ad-hoc signs and packages `dist/UplinC-<version>.zip`, creates the GitHub Release, and bumps `Casks/uplinc.rb` in `ichi0g0y/homebrew-tap`.
+
+Tags matching `*-rc*` / `*-beta*` / `*-alpha*` create a prerelease and skip the cask bump. The workflow fails fast if the tag version does not match `Info.plist`.
+
+The only required GitHub secret is `HOMEBREW_TAP_TOKEN` (fine-grained PAT scoped to `ichi0g0y/homebrew-tap`, Contents: read/write). The cask's `postflight` clears the `com.apple.quarantine` xattr so Gatekeeper accepts the ad-hoc signed bundle.
+
 ## Start At Login
 
 Open the menu and toggle `Launch at Login`. UplinC registers itself as a Login Item via `SMAppService` (macOS 13+); state is reflected in System Settings → General → Login Items, and toggling there is honored by the menu.
