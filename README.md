@@ -75,9 +75,11 @@ Releases are produced automatically by `.github/workflows/release.yml` on tag pu
 
 1. Bump `CFBundleShortVersionString` (and `CFBundleVersion`) in `Resources/Info.plist`. Open a PR and merge to `main`.
 2. Tag the merge commit: `git tag v<version> && git push origin v<version>`.
-3. The workflow builds, signs with Developer ID, notarizes, staples, packages `dist/UplinC-<version>.zip`, creates the GitHub Release, and bumps `Casks/uplinc.rb` in `ichi0g0y/homebrew-tap`.
+3. The workflow ad-hoc signs and packages `dist/UplinC-<version>.zip`, creates the GitHub Release, and bumps `Casks/uplinc.rb` in `ichi0g0y/homebrew-tap`.
 
 Tags matching `*-rc*` / `*-beta*` / `*-alpha*` create a prerelease and skip the cask bump. The workflow fails fast if the tag version does not match `Info.plist`.
+
+The only required GitHub secret is `HOMEBREW_TAP_TOKEN` (fine-grained PAT scoped to `ichi0g0y/homebrew-tap`, Contents: read/write). The cask's `postflight` clears the `com.apple.quarantine` xattr so Gatekeeper accepts the ad-hoc signed bundle.
 
 ## Start At Login
 
