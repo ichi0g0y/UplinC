@@ -11,12 +11,9 @@ permissions:
 jobs:
   release:
     runs-on: macos-14
-    timeout-minutes: 60
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
       - name: Derive version and prerelease flag
         id: ver
@@ -40,25 +37,16 @@ jobs:
             exit 1
           fi
 
-      - name: Import code-signing certificate
-        uses: apple-actions/import-codesign-certs@v3
-        with:
-          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
-          p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-
-      - name: Build, sign, notarize, package
-        env:
-          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: make package
-
-      - name: Compute SHA-256 sidecar
-        id: sha
+      - name: Build (ad-hoc signed) and package
+        id: pkg
         run: |
+          set -euo pipefail
+          make build
           version="${{ steps.ver.outputs.version }}"
           archive="dist/UplinC-${version}.zip"
+          mkdir -p dist
+          find build/UplinC.app -exec touch -t 202601010000 {} +
+          COPYFILE_DISABLE=1 ditto -c -k --norsrc --noextattr --keepParent build/UplinC.app "$archive"
           sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
           echo "$sha  UplinC-${version}.zip" > "${archive}.sha256"
           echo "sha256=$sha" >> "$GITHUB_OUTPUT"
@@ -78,7 +66,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
-          SHA256: ${{ steps.sha.outputs.sha256 }}
+          SHA256: ${{ steps.pkg.outputs.sha256 }}
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
