@@ -115,6 +115,8 @@
         return;
     }
 
+    NSDate *now = [NSDate date];
+
     NSString *canonicalSender = [self canonicalIPv6String:senderAddressString];
     BOOL knownBonjourPeer = NO;
     if (canonicalSender.length > 0) {
@@ -136,9 +138,20 @@
             }
         }
     }
-    if (!knownBonjourPeer) {
-        [self appendLog:[NSString stringWithFormat:@"remote_sleep_rejected reason=untrusted_sender from=%@ mode=%@",
-                         senderAddressString ?: @"unknown", mode]];
+
+    BOOL knownHeartbeatPeer = NO;
+    NSDictionary *heartbeatPeer = self.heartbeatPeers[peerID];
+    if ([heartbeatPeer isKindOfClass:[NSDictionary class]]) {
+        NSDate *lastSeen = heartbeatPeer[@"lastSeen"];
+        if ([lastSeen isKindOfClass:[NSDate class]] &&
+            [now timeIntervalSinceDate:lastSeen] < 600.0) {
+            knownHeartbeatPeer = YES;
+        }
+    }
+
+    if (!knownBonjourPeer && !knownHeartbeatPeer) {
+        [self appendLog:[NSString stringWithFormat:@"remote_sleep_rejected reason=untrusted_sender from=%@ peer=%@ mode=%@",
+                         senderAddressString ?: @"unknown", peerID, mode]];
         return;
     }
 
@@ -150,7 +163,6 @@
         return;
     }
 
-    NSDate *now = [NSDate date];
     NSTimeInterval packetTime = [timestamp doubleValue];
     NSTimeInterval skew = [now timeIntervalSince1970] - packetTime;
     if (fabs(skew) > 30.0) {
