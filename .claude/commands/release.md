@@ -25,18 +25,25 @@ The command stops at every natural human gate (PR merge, RC verification). It is
 ## Pre-flight (always)
 
 1. Run `git status --porcelain`. If non-empty, abort and show the dirty files.
-2. Read `Resources/Info.plist` `CFBundleShortVersionString` and `CFBundleVersion` (use `/usr/libexec/PlistBuddy -c 'Print :KEY'`). Report both.
-3. Probe state to suggest a default stage:
-   - If `Info.plist` is still on the old version → suggest **bump**.
-   - If `Info.plist` matches `<version>` and an `v<version>-rc*` tag does **not** exist → suggest **rc**.
+2. `git fetch origin --tags --prune` so subsequent reads see the latest `origin/main` and tags. Do **not** check out `main` — in Conductor workspaces it is held by another worktree and the checkout will fail.
+3. Read `CFBundleShortVersionString` and `CFBundleVersion` from `origin/main`'s `Resources/Info.plist`:
+   ```
+   git show origin/main:Resources/Info.plist > /tmp/uplinc-info.plist
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /tmp/uplinc-info.plist
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion'            /tmp/uplinc-info.plist
+   ```
+   Report both.
+4. Probe state to suggest a default stage:
+   - If `Info.plist` (on `origin/main`) is still on the old version → suggest **bump**.
+   - If it matches `<version>` and an `v<version>-rc*` tag does **not** exist → suggest **rc**.
    - If `v<version>-rc*` tag exists and the matching prerelease is on GitHub → suggest **prod**.
    - If `v<version>` (non-RC) tag already exists → report "already released" and stop.
-4. Ask the user which stage to start from (unless `--from` is set).
+5. Ask the user which stage to start from (unless `--from` is set).
 
 ## Stage 1: Bump
 
-1. `git checkout main && git pull --ff-only`.
-2. `git checkout -b bump-<version>`.
+1. `git fetch origin --tags --prune` (skipped if Pre-flight already ran).
+2. `git switch -c bump-<version> origin/main` (creates the branch directly off `origin/main` without touching the local `main` ref — works in Conductor workspaces).
 3. Bump `Resources/Info.plist`:
    - `CFBundleShortVersionString` → `<version>`.
    - `CFBundleVersion` → current build number + 1.
@@ -49,22 +56,22 @@ The command stops at every natural human gate (PR merge, RC verification). It is
 
 ## Stage 2: RC dry-run
 
-1. `git checkout main && git pull --ff-only`.
-2. Re-confirm `Info.plist` `CFBundleShortVersionString` matches `<version>`. If not, abort — the bump PR likely is not merged yet.
+1. `git fetch origin --tags --prune` (skipped if Pre-flight already ran).
+2. Re-confirm `origin/main`'s `Info.plist` `CFBundleShortVersionString` matches `<version>` using the snippet from Pre-flight step 3. If not, abort — the bump PR likely is not merged yet.
 3. Determine RC number `N`: list existing `git tag -l "v<version>-rc*"`, pick the next integer (start at `1`).
-4. `git tag v<version>-rc<N>` and `git push origin v<version>-rc<N>`.
+4. `git tag v<version>-rc<N> origin/main` and `git push origin v<version>-rc<N>`. Tagging `origin/main` explicitly avoids relying on the workspace's HEAD being on `main`.
 5. Find the workflow run: `gh run list --workflow=release.yml --limit 5 --json databaseId,headBranch,status,createdAt`. Match the one whose `headBranch` is the new tag (or the most recent one created after the push).
-6. Watch it: `gh run watch <run-id>` (blocks until complete). Report progress concisely.
+6. Watch it: `gh run watch <run-id> --exit-status` (blocks until complete; non-zero exit on failure). Report progress concisely.
 7. After completion, verify:
    - `gh release view v<version>-rc<N> --json isPrerelease,assets` →  `isPrerelease == true`; assets include `UplinC-<version>.zip` and `UplinC-<version>.zip.sha256`.
    - Tap NOT bumped: `gh api repos/ichi0g0y/homebrew-tap/commits?path=Casks/uplinc.rb --jq '.[0].commit.message'` does **not** mention `<version>`.
-8. **STOP.** Report verification results and the prerelease URL. Tell the user to reply `go` (or re-invoke `/release <version> --from=prod`) to proceed, or to investigate if anything failed.
+8. **STOP.** Report verification results and the prerelease URL. Tell the user to reply `go` (or re-invoke `/release <version> --from=prod`) to proceed, or to investigate if anything failed (see **Recovery** below).
 
 ## Stage 3: Production release
 
-1. `git checkout main && git pull --ff-only` (just to be safe).
-2. `git tag v<version>` and `git push origin v<version>`.
-3. Find and watch the workflow run (same approach as Stage 2).
+1. `git fetch origin --tags --prune` (just to be safe).
+2. `git tag v<version> origin/main` and `git push origin v<version>`.
+3. Find and watch the workflow run (same approach as Stage 2; use `gh run watch <id> --exit-status`).
 4. Verify:
    - `gh release view v<version> --json isPrerelease,assets` → `isPrerelease == false`; assets present.
    - Tap bumped: `gh api repos/ichi0g0y/homebrew-tap/commits?path=Casks/uplinc.rb --jq '.[0].commit.message'` contains `Bump uplinc to <version>`.
@@ -81,6 +88,24 @@ The command stops at every natural human gate (PR merge, RC verification). It is
 - If any verification step fails (Release missing, tap unexpectedly bumped during RC, etc.), STOP and report. Never proceed to the next stage.
 - This command does **not** open a dropr task — releases are operational rather than feature work. If the user wants traceability, they can ask explicitly.
 - Commit message format follows the repo's convention (English, `emoji [scope] description`).
+
+## Recovery
+
+If a stage fails (workflow run errors, verification mismatch, etc.):
+
+1. **Stop immediately.** Do not push the next stage's tag.
+2. Inspect the failed run: `gh run view <run-id> --log-failed` (or open the URL in a browser).
+3. If a tag was pushed but no Release was created (e.g. the workflow died at *Verify tag matches Info.plist*), delete the tag so a re-run isn't blocked by it:
+   ```
+   git push origin :refs/tags/v<version>[-rcN]
+   git tag -d   v<version>[-rcN]
+   ```
+   Confirm with the user before deleting (destructive on the remote).
+4. Fix the root cause:
+   - **Workflow / CI bug** → open a separate PR against `main` to fix `.github/workflows/release.yml` (or whatever broke). Get it merged.
+   - **Wrong Info.plist version** → the bump PR was probably not merged to `main`; merge it and retry.
+5. Re-invoke `/release <version> --from=rc` (or `--from=prod`) to resume from the failed stage.
+6. If a Release was already created on a bad tag (rare — workflow succeeded but produced wrong artifacts), delete it too: `gh release delete v<version>[-rcN] --cleanup-tag --yes` (ask the user first).
 
 ## Example session
 
